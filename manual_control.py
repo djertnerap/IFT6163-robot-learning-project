@@ -14,11 +14,13 @@ from pyglet.window import key
 
 import miniworld
 
+import environment
+
 # import sys
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--env-name", default=miniworld.envs.env_ids[0])
+parser.add_argument("--env-name", default='MiniWorld-OpenField-v0')
 parser.add_argument(
     "--domain-rand", action="store_true", help="enable domain randomization"
 )
@@ -33,12 +35,12 @@ parser.add_argument(
 args = parser.parse_args()
 view_mode = "top" if args.top_view else "agent"
 
-env = gym.make(args.env_name, view=view_mode, render_mode="human")
+environment = gym.make(args.env_name, view=view_mode, render_mode="human")
 
 if args.no_time_limit:
-    env.max_episode_steps = math.inf
+    environment.max_episode_steps = math.inf
 if args.domain_rand:
-    env.domain_rand = True
+    environment.domain_rand = True
 
 print("============")
 print("Instructions")
@@ -46,32 +48,34 @@ print("============")
 print("move: arrow keys\npickup: P\ndrop: D\ndone: ENTER\nquit: ESC")
 print("============")
 
-env.reset()
+environment.reset()
 
 # Create the display window
-env.render()
+environment.render()
 
 
 def step(action):
     print(
         "step {}/{}: {}".format(
-            env.step_count + 1, env.max_episode_steps, env.actions(action).name
+            environment.step_count + 1,
+            environment.max_episode_steps,
+            environment.actions(action).name
         )
     )
 
-    obs, reward, termination, truncation, info = env.step(action)
+    obs, reward, termination, truncation, info = environment.step(action)
 
     if reward > 0:
         print(f"reward={reward:.2f}")
 
     if termination or truncation:
         print("done!")
-        env.reset()
+        environment.reset()
 
-    env.render()
+    environment.render()
 
 
-@env.unwrapped.window.event
+@environment.unwrapped.window.event
 def on_key_press(symbol, modifiers):
     """
     This handler processes keyboard commands that
@@ -80,44 +84,44 @@ def on_key_press(symbol, modifiers):
 
     if symbol == key.BACKSPACE or symbol == key.SLASH:
         print("RESET")
-        env.reset()
-        env.render()
+        environment.reset()
+        environment.render()
         return
 
     if symbol == key.ESCAPE:
-        env.close()
+        environment.close()
         # sys.exit(0)
 
     if symbol == key.UP:
-        step(env.actions.move_forward)
+        step(environment.actions.move_forward)
     elif symbol == key.DOWN:
-        step(env.actions.move_back)
+        step(environment.actions.move_back)
 
     elif symbol == key.LEFT:
-        step(env.actions.turn_left)
+        step(environment.actions.turn_left)
     elif symbol == key.RIGHT:
-        step(env.actions.turn_right)
+        step(environment.actions.turn_right)
 
     elif symbol == key.PAGEUP or symbol == key.P:
-        step(env.actions.pickup)
+        step(environment.actions.pickup)
     elif symbol == key.PAGEDOWN or symbol == key.D:
-        step(env.actions.drop)
+        step(environment.actions.drop)
 
     elif symbol == key.ENTER:
-        step(env.actions.done)
+        step(environment.actions.done)
 
 
-@env.unwrapped.window.event
+@environment.unwrapped.window.event
 def on_key_release(symbol, modifiers):
     pass
 
 
-@env.unwrapped.window.event
+@environment.unwrapped.window.event
 def on_draw():
-    env.render()
+    environment.render()
 
 
-@env.unwrapped.window.event
+@environment.unwrapped.window.event
 def on_close():
     pyglet.app.exit()
 
@@ -125,4 +129,4 @@ def on_close():
 # Enter main event loop
 pyglet.app.run()
 
-env.close()
+environment.close()

@@ -13,7 +13,7 @@ class Rat(Agent):
     def __init__(self):
         super().__init__()
         self.cam_height = 0.75
-        self.radius = 0.000001
+        self.radius = 0.2
         self.height = 0.9
         self.cam_fwd_disp = 0
 
@@ -145,7 +145,7 @@ class OpenField(RatWorldEnv):
 
     """
 
-    def __init__(self, size=22, continuous=False, **kwargs):
+    def __init__(self, size=23, continuous=False, **kwargs):
         assert size >= 2
         self.size = size
         self.continuous = continuous
@@ -153,8 +153,8 @@ class OpenField(RatWorldEnv):
 
         if continuous:
             self.action_space = spaces.Box(
-                low=np.array([0, 1]), high=np.array([-1, 1]), shape=(2,)
-            )
+            low=np.array([0,-1]), high=np.array([1,1]), shape=(2,)
+        )
 
         else:
             # Reduce the action space
@@ -174,6 +174,17 @@ class OpenField(RatWorldEnv):
         # colorlist = list(COLOR_NAMES)
 
         self.place_agent()
+
+    def turn_agent_cont(self, turn_angle):
+        """
+        Turn the agent left or right
+        """
+
+        orig_dir = self.agent.dir
+
+        self.agent.dir += turn_angle
+
+        return True
 
     def move_agent_cont(self, speed):
         """
@@ -200,8 +211,8 @@ class OpenField(RatWorldEnv):
         self.step_count += 1
 
         if self.continuous:
-            self.turn_agent(action[1])
-            self.move_agent(action[0], self.DEFAULT_DRIFT)
+            self.turn_agent_cont(action[1])
+            self.move_agent_cont(action[0])
         else:
             rand = self.np_random if self.domain_rand else None
             fwd_step = self.params.sample(rand, "forward_step")

@@ -2,4 +2,5 @@ gymnasium
 numpy
 pyglet
 miniworld
+ratinabox
 hydra-core

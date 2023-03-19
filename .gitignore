@@ -129,8 +129,8 @@ dmypy.json
 .pyre/
 
 .idea
-.tool-versions
 Pipfile
+.tool-versions
 Pipfile.lock
 ratinabox.ipynb
 .vscode/launch.json

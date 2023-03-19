@@ -1,5 +1,5 @@
 import gymnasium as gym
-from environment.env import OpenField
+from .env import OpenField
 
 
 # Register the environment with OpenAI Gym

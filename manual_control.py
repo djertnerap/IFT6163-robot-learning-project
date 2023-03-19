@@ -12,9 +12,7 @@ import gymnasium as gym
 import pyglet
 from pyglet.window import key
 
-import miniworld
-
-import environment
+import environment as custom_env
 
 # import sys
 

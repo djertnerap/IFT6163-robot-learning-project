@@ -1,10 +1,10 @@
+from abc import ABC
+
 import numpy as np
-import gymnasium as gym
 from gymnasium import spaces
 from miniworld.entity import Agent
 from miniworld.miniworld import MiniWorldEnv
-from typing import Optional, Tuple
-from gymnasium.core import ObsType
+from typing import Optional
 from miniworld.params import DEFAULT_PARAMS
 
 
@@ -16,10 +16,12 @@ class Rat(Agent):
         self.radius = 0.000001
         self.height = 0.9
         self.cam_fwd_disp = 0
+
     def randomize(self, *args):
         pass
 
-class RatWorldEnv(MiniWorldEnv):
+
+class RatWorldEnv(MiniWorldEnv, ABC):
 
     def __init__(
         self,
@@ -34,18 +36,18 @@ class RatWorldEnv(MiniWorldEnv):
         view: str = "agent",
     ):
         super().__init__(
-            max_episode_steps = max_episode_steps,
-            obs_width = obs_width,
-            obs_height = obs_height,
-            window_width = window_width,
-            window_height = window_height,
-            params = params,
-            domain_rand = domain_rand,
-            render_mode = render_mode,
-            view = view,
+            max_episode_steps=max_episode_steps,
+            obs_width=obs_width,
+            obs_height=obs_height,
+            window_width=window_width,
+            window_height=window_height,
+            params=params,
+            domain_rand=domain_rand,
+            render_mode=render_mode,
+            view=view,
         )
 
-    def reset(self, *, seed = None, options = None):
+    def reset(self, *, seed=None, options=None):
         """
         Reset the simulation at the start of a new episode
         This also randomizes many environment parameters (domain randomization)
@@ -107,6 +109,7 @@ class RatWorldEnv(MiniWorldEnv):
 
 
 class OpenField(RatWorldEnv):
+    DEFAULT_DRIFT = 0
     """
     ## Description
 
@@ -148,11 +151,10 @@ class OpenField(RatWorldEnv):
         self.continuous = continuous
         super().__init__(**kwargs)
 
-
         if continuous:
             self.action_space = spaces.Box(
-            low=np.array([0,1]), high=np.array([-1,1]), shape=(2,)
-        )
+                low=np.array([0, 1]), high=np.array([-1, 1]), shape=(2,)
+            )
 
         else:
             # Reduce the action space
@@ -177,10 +179,10 @@ class OpenField(RatWorldEnv):
         """
         Move the agent forward
         """
-        
+
         next_pos = (
-            self.agent.pos
-            + self.agent.dir_vec * speed
+                self.agent.pos
+                + self.agent.dir_vec * speed
         )
 
         if self.intersect(self.agent, next_pos, self.agent.radius):
@@ -199,7 +201,7 @@ class OpenField(RatWorldEnv):
 
         if self.continuous:
             self.turn_agent(action[1])
-            self.move_agent(action[0])
+            self.move_agent(action[0], self.DEFAULT_DRIFT)
         else:
             rand = self.np_random if self.domain_rand else None
             fwd_step = self.params.sample(rand, "forward_step")

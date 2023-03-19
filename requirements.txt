@@ -2,3 +2,4 @@ gymnasium
 numpy
 pyglet
 miniworld
+hydra-core

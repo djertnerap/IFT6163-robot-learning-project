@@ -1,3 +1,5 @@
 alg:
+    n_iter: 10
+    entropy_reactivation_target: 0.5
     prob_correction: 0.1
-    
+    prob_storage: 0.0000625

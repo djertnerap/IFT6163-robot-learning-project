@@ -134,3 +134,5 @@ Pipfile
 Pipfile.lock
 ratinabox.ipynb
 .vscode/launch.json
+
+outputs

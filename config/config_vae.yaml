@@ -1,0 +1,7 @@
+alg:
+    n_iter: 10
+    in_channels: 64
+    latent_dim: 10
+    hidden_dims: [128, 256, 512, 1024]
+    learning_rate: 0.001
+    # The following parameters are specific to the VAE algorithm

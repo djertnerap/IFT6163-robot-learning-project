@@ -1,14 +1,27 @@
 # IFT6163-robot-learning-project
 
-## Env Setup
-To have the DeepMind Lab environment available, we need to build a local python package & then use that package in our 
-project.
+TODO: Fill each section properly
 
-** Must have a global python ready and available
+## Table of content
 
-1. Follow the steps in from [deepmindlab](https://github.com/deepmind/lab/blob/master/python/pip_package/README.md).
-   2. This requires installing Bazel which can be done through this [link](https://github.com/bazelbuild/bazelisk).
+- [Requirements](#requirements)
+- [Getting started](#getting-started)
+- [Miniworld Environment](#miniworld-environment)
+- [Examples of experiments](#examples-of-experiments)
+- [Authors](#authors)
 
-**We must be careful with all this once we start doing it in a docker to launch the jobs**
+## Requirements
 
-TODO: Add the locally built package to the setup steps as a pip install
+## Getting started
+
+TODO: what to run, how to configure stuff and environments
+
+## Miniworld Environment
+
+## Examples of experiments
+
+## Authors
+
+- Aleksei Efremov (aleksei.efremov@umontreal.ca)
+- Kevin Lessard (kevin.lessard@umontreal.ca)
+- Jérémy Parent (jeremy.parent@umontreal.ca)

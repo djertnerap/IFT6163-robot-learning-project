@@ -1,5 +1,6 @@
 gymnasium
 numpy
+pandas
 pyglet
 miniworld
 ratinabox

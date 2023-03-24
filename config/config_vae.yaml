@@ -1,7 +1,25 @@
+data:
+    img_dir: images/
+
 alg:
-    n_iter: 10
-    in_channels: 64
-    latent_dim: 10
-    hidden_dims: [128, 256, 512, 1024]
-    learning_rate: 0.001
+    train_batch_size: 50
+    eval_batch_size: 50
+    n_epochs: 1
+    n_iter: 1
+    in_channels: 3
+    latent_dim: 64  # Dimension of the output vector of the encoder
+    output_channels: [16, 16, 32, 32]
+    kernel_sizes: [5, 5, 3, 3]
+    strides: [2, 2, 1, 1]
+    paddings: ['same', 'same', 'same', 'same']
+    learning_rate: 1e-4
+
+
+    vae_config:
+        - output_channels: 64
+          kernel_size: 3
+          stride: 1
+          padding: 1
+          activation: ReLU
+
     # The following parameters are specific to the VAE algorithm

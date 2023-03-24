@@ -1,6 +1,7 @@
 # Visual Autoencoder - AE minimizing reconstruction error by distance squared |y_raw - y_hat_raw|^2
 
 import os
+import time
 from typing import Tuple, List
 
 import hydra
@@ -16,7 +17,7 @@ from torch.utils.data import Dataset
 from torchvision.io import read_image
 from torch.utils.data import DataLoader
 
-from ae_model import ConvolutionalAE, NetworkConfiguration
+from ae_model import ConvolutionalAE
 
 
 class CustomImageDataset(Dataset):
@@ -25,61 +26,67 @@ class CustomImageDataset(Dataset):
         self.transform = transform
 
     def __len__(self):
-        return len(self.img_labels)
+        return len([name for name in os.listdir(self.img_dir) if os.path.isfile(self.img_dir + name)])
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir)
         image = read_image(img_path)
         if self.transform:
             image = self.transform(image)
+
         return image
 
 
 def get_dataloaders(config, transform=None):
-    dataset = CustomImageDataset(img_dir=config['data']['img_dir'], transform=transform)
-    train_dataloader = DataLoader(dataset["train"],
-                                  batch_size=config['alg']['train_batch_size'],
-                                  shuffle=True,
-                                  drop_last=True)
-    test_dataloader = DataLoader(dataset["test"],
-                                  batch_size=config['alg']['train_batch_size'],
-                                  shuffle=True,
-                                  drop_last=True)
 
-    return train_dataloader, test_dataloader
+    cwd = hydra.utils.get_original_cwd() + '/'
+    path = cwd + config['data']['img_dir']
+
+    dataset = CustomImageDataset(img_dir=path, transform=transform)
+    train_dataloader = DataLoader(dataset,
+                                  batch_size=config['alg']['train_batch_size'],
+                                  shuffle=True,
+                                  drop_last=True)
+    # test_dataloader = DataLoader(dataset,
+    #                               batch_size=config['alg']['train_batch_size'],
+    #                               shuffle=True,
+    #                               drop_last=True)
+
+    return train_dataloader
+
 
 def train(config, model, optimizer):
 
     # 200,000 minibatches * 50 images =
     # rained separate AE for each env (square, circular, trapezoid)
     #
-    train_dataloader, _ = get_dataloaders(config=config, transform=None)
+    train_dataloader = get_dataloaders(config=config, transform=None)
 
-    for epoch in range(config['alg']['epochs']):
-        with tqdm(train_dataloader, unit="batch", leave=False) as tepoch:
-            model.train()
-            for batch in tepoch:
-                tepoch.set_description(f"Epoch: {epoch}")
+    start = time.time()
+    for epoch in range(config['alg']['n_epochs']):
+        model.train()
+        for batch in train_dataloader:
 
-                optimizer.zero_grad()
+            optimizer.zero_grad()
 
-                # input
-                x = batch["pixel_values"].to(model.device)
+            # input
+            x = batch["pixel_values"].to(model.device)
 
-                # recon
-                recon, input_img = model(x)[0:1]
+            # recon
+            recon, input_img = model(x)[0:1]
 
-                # loss
-                loss = model.loss_function(recon, input_img)
+            # loss
+            loss = model.loss_function(recon, input_img)
 
-                loss.backward()
-                optimizer.step()
+            loss.backward()
+            optimizer.step()
+            print('Time:', time.time() - start)
 
-                tepoch.set_postfix(loss=loss.item())
+        print('loss', loss)
 
 
-def create_config(config):
-    out_channels: List[int, ...] = list(config['alg']['out_channels'])
+def create_network_config(config):
+    out_channels: List[int, ...] = list(config['alg']['output_channels'])
     kernel_sizes: List[int, ...] = list(config['alg']['kernel_sizes'])
     strides: List[int, ...] = list(config['alg']['strides'])
     paddings: List = list(config['alg']['paddings'])
@@ -91,11 +98,11 @@ def main(config: DictConfig):
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    net_config = create_config(config=config)
+    net_config = create_network_config(config=config)
     
     model = ConvolutionalAE(
-        in_channels=config['model']['in_channels'],
-        latent_dim=config['model']['latent_dim'],
+        in_channels=config['alg']['in_channels'],
+        latent_dim=config['alg']['latent_dim'],
         net_config=net_config,
         device=device
     )
@@ -103,27 +110,9 @@ def main(config: DictConfig):
     optimizer = torch.optim.Adam(model.parameters(), lr=config['alg']['learning_rate'])
 
     model.to(device)
-    optimizer.to(device)
 
-    train_dataloader, test_dataloader = get_dataloaders(config=config, transform=None)
-
-    for epoch in range(1, config['alg']['n_epochs'] + 1):
-        with tqdm(train_dataloader, unit="batch", leave=False) as tepoch:
-            model.train()
-            for batch in tepoch:
-                tepoch.set_description(f"Epoch: {epoch}")
-
-                optimizer.zero_grad()
-
-                x = batch.to(device)
-
-                recons = model(x)
-
-                loss = model.loss(x, recons)
-                loss.backward()
-                optimizer.step()
-
-                tepoch.set_postfix(loss=loss.item())
+    if config['alg']['do_train']:
+        train(config=config, model=model, optimizer=optimizer)
 
 
 if __name__ == "__main__":

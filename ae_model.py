@@ -4,6 +4,9 @@ from torch import nn, Tensor
 from torch.nn import functional as F
 from typing import Tuple, List, NamedTuple, Any
 
+from functools import reduce
+from operator import __add__
+
 
 class BaseAE(nn.Module):
 
@@ -31,12 +34,16 @@ class BaseAE(nn.Module):
         pass
 
 
+def calculate_same_padding(k, s, i):
+    return round(((s - 1) * i - s + k) / 2)
+
+
 class ConvolutionalAE(BaseAE):
 
     def __init__(self,
                  in_channels: int,
                  latent_dim: int,
-                 net_config: List[List[List], ...],
+                 net_config: List[List],
                  device=torch.device,
                  **kwargs) -> None:
         super(ConvolutionalAE, self).__init__()
@@ -54,15 +61,19 @@ class ConvolutionalAE(BaseAE):
         modules = []
 
         for i in range(len(n_channels)):
+            if strides[i] > 1 and paddings[i] == 'same':
+                paddings[i] = calculate_same_padding(kernel_sizes[i], strides[i], in_channels)
             modules.append(
                 nn.Conv2d(in_channels=in_channels,
                           out_channels=n_channels[i],
-                          kernel_size=kernel_sizes[i + 1],
+                          kernel_size=kernel_sizes[i],
                           stride=strides[i],
                           padding=paddings[i])
             )
             modules.append(self.activation)
             in_channels = n_channels[i]
+
+        modules.append(nn.Flatten())
 
         self.encoder = nn.Sequential(*modules)
 
@@ -79,13 +90,15 @@ class ConvolutionalAE(BaseAE):
         paddings.reverse()
 
         for i in range(len(n_channels) - 1):
+            if strides[i] > 1 and paddings[i] == 'same':
+                paddings[i] = calculate_same_padding(kernel_sizes[i], strides[i], n_channels[i])
             modules.append(
                 nn.ConvTranspose2d(
                     in_channels=n_channels[i],
                     out_channels=n_channels[i + 1],
-                    kernel_size=3,
-                    stride=2,
-                    padding=1,
+                    kernel_size=kernel_sizes[i],
+                    stride=strides[i],
+                    padding=paddings[i],
                     output_padding=1),
             )
             modules.append(self.activation)
@@ -112,3 +125,4 @@ class ConvolutionalAE(BaseAE):
 
         loss = F.mse_loss(recons, x)
         return loss
+

@@ -2,6 +2,7 @@ data:
     img_dir: images/
 
 alg:
+    do_train: True
     train_batch_size: 50
     eval_batch_size: 50
     n_epochs: 1

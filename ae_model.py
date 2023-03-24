@@ -74,6 +74,9 @@ class ConvolutionalAE(BaseAE):
         modules.append(self.decoder_input)
 
         n_channels.reverse()
+        kernel_sizes.reverse()
+        strides.reverse()
+        paddings.reverse()
 
         for i in range(len(n_channels) - 1):
             modules.append(

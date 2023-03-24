@@ -15,25 +15,28 @@ import torch.nn as nn
 from tqdm import tqdm
 from torch.utils.data import Dataset
 from torchvision.io import read_image
+from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
+from PIL import Image
 
 from ae_model import ConvolutionalAE
 
 
 class CustomImageDataset(Dataset):
-    def __init__(self, img_dir, transform=None):
+    def __init__(self, img_dir, transform=None, rotate=None):
         self.img_dir = img_dir
         self.transform = transform
+        self.rotate = rotate
 
     def __len__(self):
         return len([name for name in os.listdir(self.img_dir) if os.path.isfile(self.img_dir + name)])
 
     def __getitem__(self, idx):
         img_path = os.path.join(self.img_dir)
-        image = read_image(img_path)
-        if self.transform:
-            image = self.transform(image)
-
+        # image = read_image(img_path)
+        conv = ToTensor()
+        image = Image.open(img_path + str(idx) + '.png').convert("RGB")
+        image = conv(image)
         return image
 
 
@@ -70,13 +73,13 @@ def train(config, model, optimizer):
             optimizer.zero_grad()
 
             # input
-            x = batch["pixel_values"].to(model.device)
+            x = batch.to(model.device)
 
             # recon
-            recon, input_img = model(x)[0:1]
+            recon = model(x)
 
             # loss
-            loss = model.loss_function(recon, input_img)
+            loss = model.loss_function(x, recon)
 
             loss.backward()
             optimizer.step()
@@ -96,7 +99,8 @@ def create_network_config(config):
 @hydra.main(config_path="config", config_name="config_vae")
 def main(config: DictConfig):
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
 
     net_config = create_network_config(config=config)
     

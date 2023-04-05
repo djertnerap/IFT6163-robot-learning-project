@@ -1,5 +1,23 @@
+hardware:
+    use_gpu: True
+    which_gpu: 0
+    dataset_path: images/
+
 alg:
-    n_iter: 10
-    entropy_reactivation_target: 0.5
-    prob_correction: 0.1
-    prob_storage: 0.0000625
+    n_iter: 200000
+    entropy_reactivation_target: 0.5  # H_react
+    prob_correction: 0.1  # P_correction
+    prob_storage: 0.0000625  # P_storage
+    nb_memory_slots: 512  # S
+    episode_len: 500
+    unroll_len: 50
+    batch_size: 32
+    memory_slot_learning_rate: 0.01
+    learning_rate: 0.003
+    rnn_dropout: 0.5
+    adam_beta1: 0.9  # beta_1
+    adam_beta2: 0.999  # beta_2
+
+
+logging:
+    seed: 1234

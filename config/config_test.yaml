@@ -1,7 +1,7 @@
 hardware:
     use_gpu: True
     which_gpu: 0
-    dataset_path: images/
+    dataset_folder_path: images
 
 alg:
     n_iter: 200000

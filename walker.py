@@ -11,11 +11,14 @@ from utils.trajectory import generate_traj
 import environ
 
 
-def run_random_walk(time, seed):
+def generate_dataset(time, seed):
     hydra.initialize(config_path="config", job_name="rat_random_walk_dataset_generator", version_base=None)
     config = hydra.compose(config_name="config_test")
     dataset_folder_path = config["hardware"]["dataset_folder_path"]
+    run_random_walk(time, seed, dataset_folder_path)
 
+
+def run_random_walk(time, seed, dataset_folder_path):
     if not os.path.exists(dataset_folder_path):
         os.mkdir(dataset_folder_path)
 
@@ -48,4 +51,4 @@ def run_random_walk(time, seed):
 
 
 if __name__ == "__main__":
-    run_random_walk(600, 0)
+    generate_dataset(600, 0)

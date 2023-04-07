@@ -11,9 +11,10 @@ alg:
     nb_memory_slots: 512  # S
     episode_len: 500
     unroll_len: 50
-    batch_size: 32
+    batch_size: 50
     memory_slot_learning_rate: 0.01
     learning_rate: 0.003
+    ae_learning_rate: 0.0001
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2

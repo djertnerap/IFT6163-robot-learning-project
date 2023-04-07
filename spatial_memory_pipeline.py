@@ -12,9 +12,7 @@ def spatial_memory_pipeline():
     # A
     # A1: encode observation with CNN autoencoder
 
-    # A2: Compare embedding to stored embeddings
-
-    # A3: Activate them proportionally to similarity (I think?)
+    # A2: Activate them proportionally to similarity (I think?)
     # P_reactivation(s | y_t, M) = e^{beta * y_t^T * m_s^(y)}
     # in essence, this is exp(beta * current_obs_embedding.T * mem_slot_s_embedding)
     # Note: beta = way to get its value is TODO...
@@ -33,7 +31,8 @@ def spatial_memory_pipeline():
 
     # C2 perform update
 
-    # D (I think it may be done before C & doesn't matter)
+    # D
+    # do this straight after A1 & B2. BEFORE A2 & B3
     # D1: with probability p_storage, store y_t, x_{1,s}, x_{2,s} & x_{3,s} in memory slots.
     pass
 
@@ -59,8 +58,6 @@ class SpatialMemoryPipeline:
 
     def train(self, img: np.ndarray):
         visual_encoding = self._auto_encoder(ptu.from_numpy(img))
-
-
 
 
 def get_new_beta(p_react: float, H_react: float, previous_beta: float) -> float:

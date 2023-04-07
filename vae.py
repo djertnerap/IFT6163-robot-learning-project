@@ -18,9 +18,9 @@ from torchvision.io import read_image
 from torchvision.transforms import ToTensor
 from torch.utils.data import DataLoader
 from PIL import Image
+import pytorch_lightning as pl
 
 from ae_model import ConvolutionalAE
-
 
 class CustomImageDataset(Dataset):
     def __init__(self, img_dir, transform=None, rotate=None):

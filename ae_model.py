@@ -4,43 +4,17 @@ from torch import nn, Tensor
 from torch.nn import functional as F
 from typing import Tuple, List, NamedTuple, Any
 import math
+import pytorch_lightning as pl
 
 from functools import reduce
 from operator import __add__
-
-
-class BaseAE(nn.Module):
-
-    def __init__(self) -> None:
-        super(BaseAE, self).__init__()
-
-    def encode(self, input: Tensor) -> List[Tensor]:
-        raise NotImplementedError
-
-    def decode(self, input: Tensor) -> Any:
-        raise NotImplementedError
-
-    def sample(self, batch_size: int, current_device: int, **kwargs) -> Tensor:
-        raise NotImplementedError
-
-    def generate(self, x: Tensor, **kwargs) -> Tensor:
-        raise NotImplementedError
-
-    @abstractmethod
-    def forward(self, *inputs: Tensor) -> Tensor:
-        pass
-
-    @abstractmethod
-    def loss_function(self, *inputs: Any, **kwargs) -> Tensor:
-        pass
-
 
 def calculate_same_padding(k, s, i):
     # need to find the right padding:
     return ((s - 1) * i - s + k) / 2
 
 
-class ConvolutionalAE(BaseAE):
+class ConvolutionalAE(nn.Module):
 
     def __init__(self,
                  in_channels: int,
@@ -54,7 +28,6 @@ class ConvolutionalAE(BaseAE):
         self.latent_dim = latent_dim
         self.net_config = net_config
         self.device = device
-
         self.activation = nn.ReLU()
 
         n_channels, kernel_sizes, strides, paddings = self.net_config
@@ -65,8 +38,8 @@ class ConvolutionalAE(BaseAE):
         ## CNN
         for i in range(len(n_channels)):
             if strides[i] > 1 and paddings[i] == 'same':
-                # paddings[i] = calculate_same_padding(kernel_sizes[i], strides[i], in_channels)
-                paddings[i] = 2  # temporary
+                paddings[i] = calculate_same_padding(kernel_sizes[i], strides[i], in_channels)
+                # paddings[i] = 2  # temporary
             modules.append(
                 nn.Conv2d(in_channels=in_channels,
                           out_channels=n_channels[i],
@@ -135,6 +108,13 @@ class ConvolutionalAE(BaseAE):
     def generate(self, x: Tensor, **kwargs) -> Tensor:
         return self.forward(x)[0]
 
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        recons = self.forward(x)
+        loss = self.loss_function(x, recons)
+        self.log('train_loss', loss)
+        return loss
+
     @abstractmethod
     def forward(self, x: Tensor) -> Tensor:
         encoded = self.encode(x)
@@ -147,4 +127,3 @@ class ConvolutionalAE(BaseAE):
 
         loss = F.mse_loss(recons, x)
         return loss
-

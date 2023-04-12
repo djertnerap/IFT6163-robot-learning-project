@@ -135,6 +135,6 @@ Pipfile.lock
 ratinabox.ipynb
 .vscode/launch.json
 
-outputs
-images
-lightning_logs
+outputs/
+images/
+lightning_logs/

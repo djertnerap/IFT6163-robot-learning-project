@@ -6,8 +6,6 @@ from typing import Tuple, List, NamedTuple, Any
 import math
 import pytorch_lightning as pl
 
-from functools import reduce
-from operator import __add__
 
 def calculate_same_padding(k, s, i):
     # need to find the right padding:

@@ -60,20 +60,6 @@ class SpatialMemoryPipeline:
         visual_encoding = self._auto_encoder(ptu.from_numpy(img))
 
 
-def get_new_beta(p_react: float, H_react: float, previous_beta: float) -> float:
-    """
-    Gets the newly regulated parameter beta used to calculate the target memory reactivation.
-    This should be called after every trajectory
-    """
-    beta_logit = np.log(previous_beta)
-    # Perhaps we could apply a certain rounding that defines when they are close enough for us not to change it?
-    if p_react < H_react:
-        beta_logit += 0.001
-    elif p_react > H_react:
-        beta_logit -= 0.001
-    return np.exp(beta_logit)
-
-
 class MemoryMap:
     # I think this will be a class
 

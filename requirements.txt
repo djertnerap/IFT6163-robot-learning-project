@@ -1,5 +1,6 @@
 gymnasium
 numpy
+pandas
 pyglet
 miniworld
 ratinabox
@@ -7,5 +8,9 @@ hydra-core
 tqdm
 --extra-index-url https://download.pytorch.org/whl/cu117
 torch==1.13.1+cu117
+<<<<<<< HEAD
 torchvision==0.14.1+cu117
 lightning[extra]
+=======
+torchvision
+>>>>>>> 18a225d (dataloader issue to fix)

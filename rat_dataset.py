@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 
-import pytorch_lightning as pl
-from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
+import lightning.pytorch as pl
+from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
@@ -14,7 +14,7 @@ class RatDataModule(pl.LightningDataModule):
     def __init__(self, data_dir: str, batch_size: int = 32):
         super().__init__()
         self._data_dir = data_dir
-        self._batch_size = 32
+        self._batch_size = batch_size
         self._train_dataset = None
 
     def prepare_data(self):

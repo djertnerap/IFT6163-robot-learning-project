@@ -54,4 +54,4 @@ def generate_traj(pos, direction, T=600):
     
     traj = np.vstack((np.array(Ag.history['speed'])*10, -np.array(Ag.history['rotation'])))
 
-    return Ag, traj
+    return Ag, traj[:,1:]

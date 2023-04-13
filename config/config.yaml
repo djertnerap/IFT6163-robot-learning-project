@@ -3,6 +3,9 @@ hardware:
     which_gpu: 0
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
 
+env:
+    img_size: 64
+
 # Visual AE parameters
 vae:
     do_train: True
@@ -34,7 +37,7 @@ smp:
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0000625  # P_storage
     nb_memory_slots: 512  # S
-    episode_len: 500
+    episode_len: 300
     unroll_len: 50
     batch_size: 50
     memory_slot_learning_rate: 0.01
@@ -56,3 +59,5 @@ rl:
 
 logging:
     seed: 1234
+    exp: test_traj
+    n_traj: 2

@@ -138,3 +138,5 @@ ratinabox.ipynb
 outputs/
 images/
 lightning_logs/
+data/
+test.ipynb

@@ -1,31 +1,86 @@
 import os
 from pathlib import Path
 
-import lightning.pytorch as pl
-from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
-from torch.utils.data import DataLoader
+import numpy as np
+import pytorch_lightning as pl
+from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
+import torch
+from torch.utils.data import DataLoader, Dataset
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
 
-from walker import run_random_walk
+from PIL import Image
+
+from agents.walker import run_random_walk
 
 
 class RatDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, batch_size: int = 32):
+    def __init__(self, data_dir: str, batch_size: int = 50):
         super().__init__()
         self._data_dir = data_dir
         self._batch_size = batch_size
-        self._train_dataset = None
+        self._img_dataset = None
 
     def prepare_data(self):
         data_dir = Path(self._data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
 
         if not any(data_dir.iterdir()):
-            run_random_walk(600, 0, self._data_dir)
+            run_random_walk(1200, 0, self._data_dir + '/long_traj')
 
-    def setup(self, stage: str):
-        self._train_dataset = ImageFolder(root=str(Path(self._data_dir).parent), transform=ToTensor())
+    def setup(self):
+        self._dataset = ImageFolder(root=self._data_dir, transform=ToTensor())
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
-        return DataLoader(dataset=self._train_dataset, batch_size=self._batch_size)
+        return DataLoader(dataset=self._dataset, batch_size=self._batch_size)
+
+
+class SequenceDataset(Dataset):
+    def __init__(self, root: str, seq_length):
+        self._data_dir = root
+        self.path = Path(root)
+        self.n_trajs = 0
+        self.seq_lenght = seq_length
+        self.transform = ToTensor()
+
+        arrs = []
+        for child in self.path.iterdir():
+            if self.n_trajs == 0:
+                self._subfloder = str(child)[:-1]
+            self.n_trajs += 1
+        for i in range(self.n_trajs):
+            arrs.append(np.load(self._subfloder+str(i)+'/traj.npy')[None])
+        self.trajs = np.concatenate(arrs, axis=0)
+
+        self.traj_chunks = self.trajs.shape[-1]//seq_length
+
+    def __len__(self):
+        return self.n_trajs * self.traj_chunks
+    
+    def __getitem__(self, index):
+        traj = index//self.traj_chunks
+        chunk = index%self.traj_chunks
+
+        acts = self.trajs[traj,:,chunk*self.seq_lenght:(chunk+1)*self.seq_lenght].T
+
+        first_img_idx = chunk*self.seq_lenght
+        img_path = Path(str(self._subfloder)+str(traj)+'/Images')
+        first_img = self.transform(Image.open(img_path/(str(first_img_idx)+'.png')))
+        imgs = torch.zeros((self.seq_lenght, *first_img.shape))
+        imgs[0] = first_img
+        for i in range(self.seq_lenght-1):
+            img = Image.open(img_path/(str(first_img_idx+i+1)+'.png'))
+            imgs[i+1] = self.transform(img)
+
+        return imgs, self.transform(acts).squeeze() # imgs is a Tensor of size (seq_length, 3, 64, 64) and acts is a Tensor of size (seq_length, 2)
+
+        
+
+
+class SequencedDataModule(RatDataModule):
+    def __init__(self, data_dir: str, seq_length: int = 50, batch_size: int = 32):
+        super().__init__(data_dir=data_dir, batch_size=batch_size)
+        self.seq_length = seq_length
+    
+    def setup(self):
+        self._dataset = SequenceDataset(root=self._data_dir, seq_length=self.seq_length)

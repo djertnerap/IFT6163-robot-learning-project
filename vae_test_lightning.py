@@ -1,5 +1,9 @@
+import os
 import hydra
-import pytorch_lightning as pl
+from omegaconf import DictConfig
+import lightning.pytorch as pl
+from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch import loggers as pl_loggers
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -9,11 +13,10 @@ from rat_dataset import RatDataModule
 
 # TODO: Spatial memory pipeline like this
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, encoder, decoder, learning_rate: float, config):
+    def __init__(self, config):
         super().__init__()
         self.config = config
-        # self.encoder, self.decoder = encoder, decoder
-        self._learning_rate = learning_rate
+        self._learning_rate = self.config['vae']['learning_rate']
         self.activation = nn.ReLU()
         self.net_config = self.config['vae']['net_config'].values()
         self.in_channels = self.config['vae']['in_channels']
@@ -39,7 +42,7 @@ class LitAutoEncoder(pl.LightningModule):
             modules.append(self.activation)
             in_channels = n_channels[i]
 
-        ## Flatten and Linear encoder
+        # Flatten and Linear encoder
         modules.append(nn.Flatten())
         modules.append(nn.Linear(n_channels[-1] * 16 * 16, self.latent_dim))
 
@@ -65,6 +68,7 @@ class LitAutoEncoder(pl.LightningModule):
         )
         modules.append(self.decoder_lin)
 
+        # reverse CNN
         for i in range(len(n_channels) - 1):
 
             modules.append(
@@ -79,7 +83,6 @@ class LitAutoEncoder(pl.LightningModule):
             modules.append(self.activation)
 
         self.decoder = nn.Sequential(*modules)
-
 
     def encode(self, x):
         return self.encoder(x)
@@ -106,41 +109,30 @@ class LitAutoEncoder(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
 
 
-def main():
-    hydra.initialize(config_path="config", job_name="rat_random_walk_dataset_generator", version_base=None)
-    config = hydra.compose(config_name="config")
+@hydra.main(config_path="config", config_name="config")
+def main(config: DictConfig):
 
-    rat_data_module = RatDataModule(config["hardware"]["dataset_folder_path"])
+    # OLD STUFF
+    # hydra.initialize(config_path="config", job_name="rat_random_walk_dataset_generator", version_base=None)
+    # config = hydra.compose(config_name="config", return_hydra_config=True)
+    # hydra.runtime.output_dir + # version_output = trainer.logger.version ?
 
-    encoder = nn.Sequential(
-        nn.Conv2d(in_channels=3, out_channels=16, kernel_size=5, stride=2, padding=2),
-        nn.ReLU(),
-        nn.Conv2d(in_channels=16, out_channels=16, kernel_size=5, stride=2, padding=2),
-        nn.ReLU(),
-        nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1),
-        nn.ReLU(),
-        nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1),
-        nn.ReLU(),
-        nn.Flatten(),
-        nn.Linear(in_features=8192, out_features=64),
+    original_cwd = hydra.utils.get_original_cwd()
+    rat_data_module = RatDataModule(original_cwd + config["hardware"]["dataset_folder_path"])
+
+    ae = LitAutoEncoder(config=config)
+
+    checkpoint_callback = ModelCheckpoint(
+        monitor='train_loss',
+        filename='rat_autoencoder-{epoch:02d}-{train_loss:.2f}',
+        save_top_k=3,
+        mode='min',
     )
-    decoder = nn.Sequential(
-        nn.Linear(in_features=64, out_features=8192),
-        nn.Unflatten(dim=1, unflattened_size=(32, 16, 16)),
-        nn.ReLU(),
-        nn.ConvTranspose2d(in_channels=32, out_channels=32, kernel_size=3, stride=1, padding=1),
-        nn.ReLU(),
-        nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1),
-        nn.ReLU(),
-        nn.ConvTranspose2d(in_channels=16, out_channels=16, kernel_size=5, stride=2, padding=2, output_padding=1),
-        nn.ReLU(),
-        nn.ConvTranspose2d(in_channels=16, out_channels=3, kernel_size=5, stride=2, padding=2, output_padding=1),
-        nn.ReLU(),
-    )
-    ae = LitAutoEncoder(encoder=encoder, decoder=decoder, learning_rate=0.0001, config=config)
 
-    trainer = pl.Trainer(max_epochs=2)
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
+    trainer = pl.Trainer(max_epochs=4, callbacks=[checkpoint_callback], default_root_dir=original_cwd, logger=tb_logger)
     trainer.fit(ae, datamodule=rat_data_module)
+
 
 if __name__ == "__main__":
     main()

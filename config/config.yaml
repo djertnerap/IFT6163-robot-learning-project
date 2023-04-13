@@ -1,7 +1,7 @@
 hardware:
     use_gpu: True
     which_gpu: 0
-    dataset_folder_path: images/rat
+    dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
 
 # Visual AE parameters
 vae:
@@ -25,6 +25,7 @@ vae:
         "paddings": [2, 2, 1, 1],
         "output_paddings": [0, 0, 1, 1]  # for deconvolution
       }
+    save_top_k: 3  # Save the top 3 models from the training processq
 
 # Spatial Memory Pipeline (SMP) parameters
 smp:

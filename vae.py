@@ -113,11 +113,7 @@ class LitAutoEncoder(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
 
 
-@hydra.main(config_path="config", config_name="config", version_base="1.1")
-def main(config: DictConfig):
-    if config["hardware"]["matmul_precision"]:
-        torch.set_float32_matmul_precision(config["hardware"]["matmul_precision"])
-
+def run_vae_experiment(config: DictConfig):
     original_cwd = hydra.utils.get_original_cwd()
     rat_data_module = RatDataModule(
         data_dir=os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]),
@@ -137,7 +133,3 @@ def main(config: DictConfig):
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(max_epochs=4, callbacks=[checkpoint_callback], default_root_dir=original_cwd, logger=tb_logger)
     trainer.fit(ae, datamodule=rat_data_module)
-
-
-if __name__ == "__main__":
-    main()

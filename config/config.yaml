@@ -1,3 +1,5 @@
+experiment_type: "vae"  # ["vae", "smp"]
+
 hardware:
     use_gpu: True
     which_gpu: 0

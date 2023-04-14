@@ -10,6 +10,13 @@ TODO: Fill each section properly
 - [Examples of experiments](#examples-of-experiments)
 - [Authors](#authors)
 
+## Getting Started
+
+```commandline
+pip install -r requirements.txt
+pre-commit install
+```
+
 ## Requirements
 
 ## Getting started

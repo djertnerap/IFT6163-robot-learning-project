@@ -1,9 +1,10 @@
 import numpy as np
-from tqdm import tqdm
 import ratinabox
-from ratinabox.Environment import Environment
 from ratinabox.Agent import Agent
+from ratinabox.Environment import Environment
 from ratinabox.utils import get_angle
+from tqdm import tqdm
+
 
 class Agent_New(Agent):
     def __init__(self, Environment, params={"wall_repel_distance": 0.2}):
@@ -17,11 +18,14 @@ class Agent_New(Agent):
         self.history["angle"] = [get_angle(self.velocity)]
         # self.history["rotation"] = []
         # self.history["speed"] = []
+
     def update(self, dt=None, drift_velocity=None, drift_to_random_strength_ratio=1):
         super().update(dt, drift_velocity, drift_to_random_strength_ratio)
-        self.history["speed"].append(np.linalg.norm(np.array(self.history["pos"][-1])-np.array(self.history["pos"][-2])))
-        
-        angle_now = get_angle(np.array(self.history["pos"][-1])-np.array(self.history["pos"][-2]))
+        self.history["speed"].append(
+            np.linalg.norm(np.array(self.history["pos"][-1]) - np.array(self.history["pos"][-2]))
+        )
+
+        angle_now = get_angle(np.array(self.history["pos"][-1]) - np.array(self.history["pos"][-2]))
         angle_before = self.history["angle"][-1]
         if abs(angle_now - angle_before) > np.pi:
             if angle_now > angle_before:
@@ -38,9 +42,7 @@ def generate_traj(pos, direction, T=600):
 
     Ag = Agent_New(Env)
     Ag.pos = pos
-    Ag.velocity = Ag.speed_std * np.array(
-                [np.cos(direction), np.sin(direction)]
-            )
+    Ag.velocity = Ag.speed_std * np.array([np.cos(direction), np.sin(direction)])
     Ag.history["pos"] = [Ag.pos]
     Ag.history["vel"] = [Ag.velocity]
     Ag.history["speed"] = [np.linalg.norm(Ag.velocity)]
@@ -51,7 +53,7 @@ def generate_traj(pos, direction, T=600):
 
     for i in tqdm(range(int(T / dt))):
         Ag.update(dt=dt)
-    
-    traj = np.vstack((np.array(Ag.history['speed'])*10, -np.array(Ag.history['rotation'])))
 
-    return Ag, traj[:,1:]
+    traj = np.vstack((np.array(Ag.history["speed"]) * 10, -np.array(Ag.history["rotation"])))
+
+    return Ag, traj[:, 1:]

@@ -1,10 +1,11 @@
 import os
+
 import hydra
-from omegaconf import DictConfig
 import lightning.pytorch as pl
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch import loggers as pl_loggers
 import torch
+from lightning.pytorch import loggers as pl_loggers
+from lightning.pytorch.callbacks import ModelCheckpoint
+from omegaconf import DictConfig
 from torch import nn
 from torch.nn import functional as F
 
@@ -16,11 +17,11 @@ class LitAutoEncoder(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self._learning_rate = self.config['vae']['learning_rate']
-        self.activation = nn.ReLU()
-        self.net_config = self.config['vae']['net_config'].values()
-        self.in_channels = self.config['vae']['in_channels']
-        self.latent_dim = self.config['vae']['latent_dim']
+        self._learning_rate = self.config["vae"]["learning_rate"]
+        activation = nn.ReLU()
+        self.net_config = self.config["vae"]["net_config"].values()
+        self.in_channels = self.config["vae"]["in_channels"]
+        self.latent_dim = self.config["vae"]["latent_dim"]
 
         n_channels, kernel_sizes, strides, paddings, output_paddings = self.net_config
         in_channels = self.in_channels
@@ -33,13 +34,15 @@ class LitAutoEncoder(pl.LightningModule):
         # CNN
         for i in range(len(n_channels)):
             modules.append(
-                nn.Conv2d(in_channels=in_channels,
-                          out_channels=n_channels[i],
-                          kernel_size=kernel_sizes[i],
-                          stride=strides[i],
-                          padding=paddings[i])
+                nn.Conv2d(
+                    in_channels=in_channels,
+                    out_channels=n_channels[i],
+                    kernel_size=kernel_sizes[i],
+                    stride=strides[i],
+                    padding=paddings[i],
+                )
             )
-            modules.append(self.activation)
+            modules.append(activation)
             in_channels = n_channels[i]
 
         # Flatten and Linear encoder
@@ -61,12 +64,12 @@ class LitAutoEncoder(pl.LightningModule):
 
         # Flatten and Linear encoder
         modules.append(nn.Flatten())
-        self.decoder_lin = nn.Sequential(
+        decoder_lin = nn.Sequential(
             nn.Linear(self.latent_dim, n_channels[0] * 16 * 16),
             nn.Unflatten(dim=1, unflattened_size=(n_channels[0], 16, 16)),
-            self.activation
+            activation,
         )
-        modules.append(self.decoder_lin)
+        modules.append(decoder_lin)
 
         # reverse CNN
         for i in range(len(n_channels) - 1):
@@ -78,9 +81,10 @@ class LitAutoEncoder(pl.LightningModule):
                     kernel_size=kernel_sizes[i],
                     stride=strides[i],
                     padding=paddings[i],
-                    output_padding=output_paddings[i]),
+                    output_padding=output_paddings[i],
+                ),
             )
-            modules.append(self.activation)
+            modules.append(activation)
 
         self.decoder = nn.Sequential(*modules)
 
@@ -111,22 +115,19 @@ class LitAutoEncoder(pl.LightningModule):
 
 @hydra.main(config_path="config", config_name="config")
 def main(config: DictConfig):
-
-    # OLD STUFF
-    # hydra.initialize(config_path="config", job_name="rat_random_walk_dataset_generator", version_base=None)
-    # config = hydra.compose(config_name="config", return_hydra_config=True)
-    # hydra.runtime.output_dir + # version_output = trainer.logger.version ?
+    if config["hardware"]["matmul_precision"]:
+        torch.set_float32_matmul_precision(config["hardware"]["matmul_precision"])
 
     original_cwd = hydra.utils.get_original_cwd()
-    rat_data_module = RatDataModule(original_cwd + config["hardware"]["dataset_folder_path"])
+    rat_data_module = RatDataModule(os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]))
 
     ae = LitAutoEncoder(config=config)
 
     checkpoint_callback = ModelCheckpoint(
-        monitor='train_loss',
-        filename='rat_autoencoder-{epoch:02d}-{train_loss:.2f}',
+        monitor="train_loss",
+        filename="rat_autoencoder-{epoch:02d}-{train_loss:.2f}",
         save_top_k=3,
-        mode='min',
+        mode="min",
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

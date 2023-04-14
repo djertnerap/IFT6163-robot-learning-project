@@ -19,4 +19,4 @@ def from_numpy(*args, **kwargs) -> torch.Tensor:
 
 
 def to_numpy(tensor: torch.Tensor):
-    return tensor.to('cpu').detach().numpy()
+    return tensor.to("cpu").detach().numpy()

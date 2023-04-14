@@ -9,10 +9,9 @@ import argparse
 import math
 
 import gymnasium as gym
+import miniworld
 import pyglet
 from pyglet.window import key
-
-import miniworld
 
 import environ
 
@@ -20,13 +19,9 @@ import environ
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--env-name", default='MiniWorld-OpenField-v0')
-parser.add_argument(
-    "--domain-rand", action="store_true", help="enable domain randomization"
-)
-parser.add_argument(
-    "--no-time-limit", action="store_true", help="ignore time step limits"
-)
+parser.add_argument("--env-name", default="MiniWorld-OpenField-v0")
+parser.add_argument("--domain-rand", action="store_true", help="enable domain randomization")
+parser.add_argument("--no-time-limit", action="store_true", help="ignore time step limits")
 parser.add_argument(
     "--top_view",
     action="store_true",
@@ -57,9 +52,7 @@ environment.render()
 def step(action):
     print(
         "step {}/{}: {}".format(
-            environment.step_count + 1,
-            environment.max_episode_steps,
-            environment.actions(action).name
+            environment.step_count + 1, environment.max_episode_steps, environment.actions(action).name
         )
     )
 

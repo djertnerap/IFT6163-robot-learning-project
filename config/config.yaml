@@ -1,7 +1,9 @@
 hardware:
     use_gpu: True
     which_gpu: 0
+    matmul_precision: "high"
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
+    smp_dataset_folder_path: 'data'
 
 env:
     img_size: 64

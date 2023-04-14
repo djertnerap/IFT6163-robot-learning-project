@@ -1,27 +1,28 @@
 import os
 
+import gymnasium as gym
 import hydra
 import numpy as np
-import gymnasium as gym
 from PIL import Image
 from tqdm import tqdm
 
+import environ
 from utils.trajectory import generate_traj
 
-import environ
 
 def run_random_walk(time, seed, dataset_folder_path, img_size=64, save_traj=True):
-
-    env = gym.make('MiniWorld-OpenField-v1',
-                   view="agent",
-                   render_mode="rgb_array",
-                   obs_width=img_size,
-                   obs_height=img_size,
-                   window_width=img_size,
-                   window_height=img_size)
+    env = gym.make(
+        "MiniWorld-OpenField-v1",
+        view="agent",
+        render_mode="rgb_array",
+        obs_width=img_size,
+        obs_height=img_size,
+        window_width=img_size,
+        window_height=img_size,
+    )
     env.reset(seed=seed)
 
-    imgdir = os.path.join(dataset_folder_path, 'Images')
+    imgdir = os.path.join(dataset_folder_path, "Images")
     os.mkdir(imgdir)
 
     pos = env.agent.pos
@@ -39,7 +40,7 @@ def run_random_walk(time, seed, dataset_folder_path, img_size=64, save_traj=True
 
         if termination or truncation:
             env.reset()
-    
+
     if save_traj:
         np.save(os.path.join(dataset_folder_path, "traj.npy"), traj)
 

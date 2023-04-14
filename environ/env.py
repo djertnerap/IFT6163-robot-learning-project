@@ -1,15 +1,14 @@
 from abc import ABC
+from typing import Optional
 
 import numpy as np
 from gymnasium import spaces
 from miniworld.entity import Agent
 from miniworld.miniworld import MiniWorldEnv
-from typing import Optional
 from miniworld.params import DEFAULT_PARAMS
 
 
 class Rat(Agent):
-
     def __init__(self):
         super().__init__()
         self.cam_height = 0.75
@@ -22,7 +21,6 @@ class Rat(Agent):
 
 
 class RatWorldEnv(MiniWorldEnv, ABC):
-
     def __init__(
         self,
         max_episode_steps: int = 12000,
@@ -77,9 +75,7 @@ class RatWorldEnv(MiniWorldEnv, ABC):
         rand = self.np_random if self.domain_rand else None
 
         # Randomize elements of the world (domain randomization)
-        self.params.sample_many(
-            rand, self, ["sky_color", "light_pos", "light_color", "light_ambient"]
-        )
+        self.params.sample_many(rand, self, ["sky_color", "light_pos", "light_color", "light_ambient"])
 
         # Get the max forward step distance
         self.max_forward_step = self.params.get_max("forward_step")
@@ -132,7 +128,7 @@ class OpenField(RatWorldEnv):
 
     ## Rewards:
 
-    
+
 
     ## Arguments
 
@@ -152,9 +148,7 @@ class OpenField(RatWorldEnv):
         super().__init__(**kwargs)
 
         if continuous:
-            self.action_space = spaces.Box(
-            low=np.array([0,-1]), high=np.array([1,1]), shape=(2,)
-        )
+            self.action_space = spaces.Box(low=np.array([0, -1]), high=np.array([1, 1]), shape=(2,))
 
         else:
             # Reduce the action space
@@ -191,10 +185,7 @@ class OpenField(RatWorldEnv):
         Move the agent forward
         """
 
-        next_pos = (
-                self.agent.pos
-                + self.agent.dir_vec * speed
-        )
+        next_pos = self.agent.pos + self.agent.dir_vec * speed
 
         if self.intersect(self.agent, next_pos, self.agent.radius):
             return False

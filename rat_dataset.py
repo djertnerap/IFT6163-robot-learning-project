@@ -15,11 +15,12 @@ from agents.walker import run_random_walk
 
 
 class RatDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, batch_size: int = 50, num_workers: int = 0):
+    def __init__(self, data_dir: str, batch_size: int = 50, num_workers: int = 0, img_size: int = 64):
         super().__init__()
         self._data_dir = data_dir
         self._batch_size = batch_size
         self._num_workers = num_workers
+        self._img_size = img_size
         self._img_dataset = None
 
     def prepare_data(self):
@@ -27,7 +28,7 @@ class RatDataModule(pl.LightningDataModule):
         data_dir.mkdir(parents=True, exist_ok=True)
 
         if not any(data_dir.iterdir()):
-            run_random_walk(1200, 0, self._data_dir)
+            run_random_walk(1200, 0, self._data_dir, img_size=self._img_size, save_traj=False)
 
     def setup(self, stage: str):
         self._img_dataset = ImageFolder(root=str(Path(self._data_dir).parent), transform=ToTensor())

@@ -14,16 +14,14 @@ from rat_dataset import RatDataModule
 
 # TODO: Spatial memory pipeline like this
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, learning_rate: float, net_config: tuple, in_channels: int, latent_dim: int):
         super().__init__()
-        self.config = config
-        self._learning_rate = self.config["vae"]["learning_rate"]
+        self._learning_rate = learning_rate
         activation = nn.ReLU()
-        self.net_config = self.config["vae"]["net_config"].values()
-        self.in_channels = self.config["vae"]["in_channels"]
-        self.latent_dim = self.config["vae"]["latent_dim"]
+        self.in_channels = in_channels
+        self.latent_dim = latent_dim
 
-        n_channels, kernel_sizes, strides, paddings, output_paddings = self.net_config
+        n_channels, kernel_sizes, strides, paddings, output_paddings = net_config
         in_channels = self.in_channels
 
         ###########################
@@ -88,6 +86,8 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.decoder = nn.Sequential(*modules)
 
+        self.save_hyperparameters(ignore=["net_config"])
+
     def encode(self, x):
         return self.encoder(x)
 
@@ -122,7 +122,12 @@ def run_vae_experiment(config: DictConfig):
         img_size=config["env"]["img_size"],
     )
 
-    ae = LitAutoEncoder(config=config)
+    ae = LitAutoEncoder(
+        learning_rate=config["vae"]["learning_rate"],
+        net_config=config["vae"]["net_config"].values(),
+        in_channels=config["vae"]["in_channels"],
+        latent_dim=config["vae"]["latent_dim"],
+    )
 
     checkpoint_callback = ModelCheckpoint(
         monitor="train_loss",
@@ -132,5 +137,12 @@ def run_vae_experiment(config: DictConfig):
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
-    trainer = pl.Trainer(max_epochs=4, callbacks=[checkpoint_callback], default_root_dir=original_cwd, logger=tb_logger)
+    trainer = pl.Trainer(
+        max_steps=200_000,
+        max_epochs=4,
+        callbacks=[checkpoint_callback],
+        default_root_dir=original_cwd,
+        logger=tb_logger,
+        profiler="simple",
+    )
     trainer.fit(ae, datamodule=rat_data_module)

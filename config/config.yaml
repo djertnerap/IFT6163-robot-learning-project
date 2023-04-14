@@ -1,11 +1,11 @@
-experiment_type: "vae"  # ["vae", "smp"]
+experiment_type: "smp"  # ["vae", "smp"]
 
 hardware:
     use_gpu: True
     which_gpu: 0
     matmul_precision: "high"
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
-    smp_dataset_folder_path: 'data'
+    smp_dataset_folder_path: '/data'
     num_data_loader_workers: 0  # For now, it looks like no workers is faster but if we have a bigger dataset, then this might come in handy
 
 env:
@@ -37,23 +37,23 @@ vae:
 
 # Spatial Memory Pipeline (SMP) parameters
 smp:
-    n_iter: 200000
+    n_iter: 2 #200000
     entropy_reactivation_target: 0.5  # H_react
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0000625  # P_storage
     nb_memory_slots: 512  # S
     episode_len: 25
-    unroll_len: 50
-    batch_size: 50
+    bptt_unroll_length: 50
+    batch_size: 32
     memory_slot_learning_rate: 0.01
     learning_rate: 0.003
-    ae_learning_rate: 0.0001
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2
+    ae_checkpoint_path: "/outputs/2023-04-14/11-31-04/lightning_logs/version_0/checkpoints/rat_autoencoder-epoch=02-train_loss=0.28.ckpt"
 
 rl:
-    bptt_unroll_length: 100
+    bptt_unroll_length: 50
     batch_size: 64
     actor_critic_lr: 1e-3  # (actor-critic loss), 5e-5 for top-down schematic representation with RL-baseline
     base_loss_coeff: 0.5

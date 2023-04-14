@@ -3,7 +3,7 @@ numpy
 pyglet
 miniworld
 ratinabox
-hydra-core
+hydra-core==1.3.2
 tqdm
 --extra-index-url https://download.pytorch.org/whl/cu117
 torch==1.13.1+cu117

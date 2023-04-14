@@ -119,6 +119,7 @@ def run_vae_experiment(config: DictConfig):
         data_dir=os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]),
         batch_size=config["vae"]["train_batch_size"],
         num_workers=config["hardware"]["num_data_loader_workers"],
+        img_size=config["env"]["img_size"],
     )
 
     ae = LitAutoEncoder(config=config)

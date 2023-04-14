@@ -51,7 +51,7 @@ def generate_traj(pos, direction, T=600):
 
     dt = 50e-3
 
-    for i in tqdm(range(int(T / dt))):
+    for i in tqdm(range(int(T / dt)), desc="Agent Updates"):
         Ag.update(dt=dt)
 
     traj = np.vstack((np.array(Ag.history["speed"]) * 10, -np.array(Ag.history["rotation"])))

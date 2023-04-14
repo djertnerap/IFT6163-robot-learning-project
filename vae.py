@@ -14,16 +14,15 @@ from rat_dataset import RatDataModule
 
 # TODO: Spatial memory pipeline like this
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, config):
+    def __init__(self, learning_rate: float, net_config: dict, in_channels: int, latent_dim: int):
         super().__init__()
-        self.config = config
-        self._learning_rate = self.config["vae"]["learning_rate"]
+        self._learning_rate = learning_rate
         activation = nn.ReLU()
-        self.net_config = self.config["vae"]["net_config"].values()
-        self.in_channels = self.config["vae"]["in_channels"]
-        self.latent_dim = self.config["vae"]["latent_dim"]
+        # self.net_config = net_config
+        self.in_channels = in_channels
+        self.latent_dim = latent_dim
 
-        n_channels, kernel_sizes, strides, paddings, output_paddings = self.net_config
+        n_channels, kernel_sizes, strides, paddings, output_paddings = net_config
         in_channels = self.in_channels
 
         ###########################
@@ -88,6 +87,8 @@ class LitAutoEncoder(pl.LightningModule):
 
         self.decoder = nn.Sequential(*modules)
 
+        self.save_hyperparameters(ignore=["net_config"])
+
     def encode(self, x):
         return self.encoder(x)
 
@@ -122,7 +123,12 @@ def run_vae_experiment(config: DictConfig):
         img_size=config["env"]["img_size"],
     )
 
-    ae = LitAutoEncoder(config=config)
+    ae = LitAutoEncoder(
+        learning_rate=config["vae"]["learning_rate"],
+        net_config=config["vae"]["net_config"].values(),
+        in_channels=config["vae"]["in_channels"],
+        latent_dim=config["vae"]["latent_dim"],
+    )
 
     checkpoint_callback = ModelCheckpoint(
         monitor="train_loss",

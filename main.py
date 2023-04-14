@@ -2,6 +2,7 @@ import hydra
 import torch
 from omegaconf import DictConfig
 
+from smp import run_smp_experiment
 from vae import run_vae_experiment
 
 
@@ -15,7 +16,7 @@ def main(config: DictConfig):
         print(f"Running Experiment {experiment_type}...")
         run_vae_experiment(config)
     elif experiment_type == "smp":
-        raise NotImplementedError(f"Experiment type {experiment_type} is unknown")
+        run_smp_experiment(config)
     else:
         raise NotImplementedError(f"Experiment type {experiment_type} is unknown")
 

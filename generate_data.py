@@ -1,4 +1,5 @@
 import os.path
+from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
@@ -15,8 +16,7 @@ def generate_data(cfg: DictConfig):
         exp_name = cfg.logging.exp + "_" + str(i)
         logdir = os.path.join(data_path, exp_name)
 
-        if not os.path.exists(logdir):
-            os.mkdir(logdir)
+        Path(logdir).mkdir(parents=True, exist_ok=True)
 
         seed = cfg.logging.seed + i
 

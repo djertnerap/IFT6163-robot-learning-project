@@ -1,14 +1,21 @@
+import os
 from typing import Union
 
+import hydra
 import numpy as np
-import pytorch_lightning as pl
 import torch
+from lightning import pytorch as pl
+from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT
+from omegaconf import DictConfig
 from torch import nn
+
+from rat_dataset import SequencedDataModule
+from vae import LitAutoEncoder
 
 
 class SpatialMemoryPipeline(pl.LightningModule):
-    def __init__(self, learning_rate: float, auto_encoder: pl.LightningModule, entropy_reactivation_target: float):
+    def __init__(self, learning_rate: float, auto_encoder: LitAutoEncoder, entropy_reactivation_target: float):
         super().__init__()
         self._learning_rate = learning_rate
 
@@ -100,3 +107,31 @@ class SpatialMemoryPipeline(pl.LightningModule):
         elif p_react > self._entropy_reactivation_target:
             beta_logit -= 0.001
         self._beta = np.exp(beta_logit)
+
+
+def run_smp_experiment(config: DictConfig):
+    original_cwd = hydra.utils.get_original_cwd()
+    data_dir = os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"])
+    rat_sequence_data_module = SequencedDataModule(
+        data_dir=data_dir,
+        config=config,
+        bptt_unroll_length=config["smp"]["bptt_unroll_length"],
+        batch_size=config["smp"]["batch_size"],
+        num_workers=config["hardware"]["num_data_loader_workers"],
+        img_size=config["env"]["img_size"],
+    )
+
+    checkpoint_path = os.path.abspath(original_cwd + config["smp"]["ae_checkpoint_path"])
+    ae = LitAutoEncoder.load_from_checkpoint(
+        checkpoint_path, in_channels=config["vae"]["in_channels"], net_config=config["vae"]["net_config"].values()
+    )
+
+    smp = SpatialMemoryPipeline(
+        learning_rate=config["smp"]["learning_rate"],
+        auto_encoder=ae,
+        entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
+    )
+
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
+    trainer = pl.Trainer(max_epochs=4, default_root_dir=original_cwd, logger=tb_logger)
+    trainer.fit(smp, datamodule=rat_sequence_data_module)

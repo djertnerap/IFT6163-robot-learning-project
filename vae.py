@@ -113,13 +113,17 @@ class LitAutoEncoder(pl.LightningModule):
         return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
 
 
-@hydra.main(config_path="config", config_name="config")
+@hydra.main(config_path="config", config_name="config", version_base="1.1")
 def main(config: DictConfig):
     if config["hardware"]["matmul_precision"]:
         torch.set_float32_matmul_precision(config["hardware"]["matmul_precision"])
 
     original_cwd = hydra.utils.get_original_cwd()
-    rat_data_module = RatDataModule(os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]))
+    rat_data_module = RatDataModule(
+        data_dir=os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]),
+        batch_size=config["vae"]["train_batch_size"],
+        num_workers=config["hardware"]["num_data_loader_workers"],
+    )
 
     ae = LitAutoEncoder(config=config)
 

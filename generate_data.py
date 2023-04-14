@@ -23,10 +23,10 @@ def generate_data(cfg: DictConfig):
         run_random_walk(time=cfg.smp.episode_len, seed=seed, dataset_folder_path=logdir, img_size=cfg.env.img_size)
 
 
-@hydra.main(config_path="config", config_name="config")
-def main(cfg: DictConfig):
-    generate_data(cfg)
-
-
-if __name__ == "__main__":
-    main()
+# @hydra.main(config_path="config", config_name="config")
+# def main(cfg: DictConfig):
+#     generate_data(cfg)
+#
+#
+# if __name__ == "__main__":
+#     main()

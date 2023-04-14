@@ -4,6 +4,7 @@ hardware:
     matmul_precision: "high"
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
     smp_dataset_folder_path: 'data'
+    num_data_loader_workers: 0  # For now, it looks like no workers is faster but if we have a bigger dataset, then this might come in handy
 
 env:
     img_size: 64

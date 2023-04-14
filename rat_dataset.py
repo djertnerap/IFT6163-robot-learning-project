@@ -6,9 +6,10 @@ import torch
 from lightning.pytorch.utilities.types import TRAIN_DATALOADERS
 from omegaconf import DictConfig
 from PIL import Image
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
+from typing import Iterator, Sized
 
 import generate_data
 from agents.walker import run_random_walk
@@ -28,13 +29,35 @@ class RatDataModule(pl.LightningDataModule):
         data_dir.mkdir(parents=True, exist_ok=True)
 
         if not any(data_dir.iterdir()):
-            run_random_walk(1200, 0, self._data_dir, img_size=self._img_size, save_traj=False)
+            generate_data.generate_data(self._config)
 
     def setup(self, stage: str):
         self._img_dataset = ImageFolder(root=str(Path(self._data_dir).parent), transform=ToTensor())
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
-        return DataLoader(dataset=self._img_dataset, batch_size=self._batch_size, num_workers=self._num_workers)
+        return DataLoader(dataset=self._img_dataset, shuffle=True, batch_size=self._batch_size, num_workers=self._num_workers)
+
+
+class RandomTrajectoriesSampler(Sampler[int]):
+    r"""Samples elements randomly from different trajectories, without replacement.
+
+    Args:
+        n_traj: number of trajectories
+        chunks: number of chunks in every trajectory
+        generator (Generator): Generator used in sampling.
+    """
+
+    def __init__(self, data_source: Sized, generator=None) -> None:
+        self.n_trajs = data_source.n_trajs
+        self.chunks = data_source.traj_chunks
+        self.generator = generator
+
+    def __iter__(self) -> Iterator[int]:
+        rand_tensor =  torch.randperm(self.n_trajs, generator=self.generator) * self.chunks + torch.randint(high=self.chunks, size=(self.n_trajs,))
+        yield from iter(rand_tensor.tolist())
+
+    def __len__(self) -> int:
+        return len(self.data_source)
 
 
 class SequenceDataset(Dataset):
@@ -49,6 +72,8 @@ class SequenceDataset(Dataset):
         for child in self.path.iterdir():
             if self.n_trajs == 0:
                 self._subfloder = str(child)[:-1]
+                while self._subfloder[-1].isdigit():
+                    self._subfloder = self._subfloder[:-1]
             self.n_trajs += 1
         for i in range(self.n_trajs):
             arrs.append(np.load(self._subfloder + str(i) + "/traj.npy")[None])
@@ -84,9 +109,14 @@ class SequencedDataModule(RatDataModule):
         self.seq_length = seq_length
         self._config = config
 
-    def prepare_data(self):
-        if True:
-            generate_data.generate_data(self._config)
+    def setup(self):
+        self._seq_dataset = SequenceDataset(root=self._data_dir, seq_length=self.seq_length)
+        self._sampler = RandomTrajectoriesSampler(self._seq_dataset)
 
-    def setup(self, stage: str):
-        self._img_dataset = SequenceDataset(root=self._data_dir, seq_length=self.seq_length)
+    def train_dataloader(self) -> TRAIN_DATALOADERS:
+        return DataLoader(dataset=self._seq_dataset,
+                          sampler=self._sampler,
+                          batch_size=self._batch_size,
+                          num_workers=self._num_workers)
+
+    

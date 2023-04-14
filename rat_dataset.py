@@ -91,7 +91,7 @@ class SequencedDataModule(RatDataModule):
         img_size: int = 64,
     ):
         super().__init__(data_dir=data_dir, batch_size=batch_size, num_workers=num_workers, img_size=img_size)
-        self._bptt_unroll_lenght = bptt_unroll_length
+        self._bptt_unroll_length = bptt_unroll_length
         self._config = config
 
     def prepare_data(self):
@@ -101,4 +101,4 @@ class SequencedDataModule(RatDataModule):
             generate_data.generate_data(self._config)
 
     def setup(self, stage: str):
-        self._img_dataset = SequenceDataset(root=self._data_dir, seq_length=self._bptt_unroll_lenght)
+        self._img_dataset = SequenceDataset(root=self._data_dir, seq_length=self._bptt_unroll_length)

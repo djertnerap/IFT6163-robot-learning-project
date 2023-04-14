@@ -14,11 +14,10 @@ from rat_dataset import RatDataModule
 
 # TODO: Spatial memory pipeline like this
 class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, learning_rate: float, net_config: dict, in_channels: int, latent_dim: int):
+    def __init__(self, learning_rate: float, net_config: tuple, in_channels: int, latent_dim: int):
         super().__init__()
         self._learning_rate = learning_rate
         activation = nn.ReLU()
-        # self.net_config = net_config
         self.in_channels = in_channels
         self.latent_dim = latent_dim
 
@@ -138,5 +137,12 @@ def run_vae_experiment(config: DictConfig):
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
-    trainer = pl.Trainer(max_epochs=4, callbacks=[checkpoint_callback], default_root_dir=original_cwd, logger=tb_logger)
+    trainer = pl.Trainer(
+        max_steps=200_000,
+        max_epochs=4,
+        callbacks=[checkpoint_callback],
+        default_root_dir=original_cwd,
+        logger=tb_logger,
+        profiler="simple",
+    )
     trainer.fit(ae, datamodule=rat_data_module)

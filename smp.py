@@ -1,5 +1,5 @@
 import os
-from typing import Union
+from typing import Tuple, Union
 
 import hydra
 import numpy as np
@@ -15,21 +15,28 @@ from vae import LitAutoEncoder
 
 
 class SpatialMemoryPipeline(pl.LightningModule):
-    def __init__(self, learning_rate: float, auto_encoder: LitAutoEncoder, entropy_reactivation_target: float):
+    def __init__(
+        self,
+        learning_rate: float,
+        auto_encoder: LitAutoEncoder,
+        entropy_reactivation_target: float,
+        memory_slot_size: int,
+        nb_memory_slots: int,
+    ):
         super().__init__()
         self._learning_rate = learning_rate
 
-        self._lstm_angular_velocity = nn.LSTM(batch_first=True)
-        self._lstm_angular_velocity_correction = nn.LSTM(batch_first=True)
-        self._pi_angular_velocity = torch.rand(size=[1])
+        self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=memory_slot_size, batch_first=True)
+        # self._lstm_angular_velocity_correction = nn.LSTM(batch_first=True)
+        self._pi_angular_velocity = nn.Parameter(torch.rand(size=[1]))
 
-        self._lstm_angular_velocity_and_speed = nn.LSTM(batch_first=True)
-        self._lstm_angular_velocity_and_speed_correction = nn.LSTM(batch_first=True)
-        self._pi_angular_velocity_and_speed = torch.rand(size=[1])
+        self._lstm_angular_velocity_and_speed = nn.LSTM(input_size=3, hidden_size=memory_slot_size, batch_first=True)
+        # self._lstm_angular_velocity_and_speed_correction = nn.LSTM(batch_first=True)
+        self._pi_angular_velocity_and_speed = nn.Parameter(torch.rand(size=[1]))
 
-        self._lstm_no_self_motion = nn.LSTM(batch_first=True)
-        self._lstm_no_self_motion_correction = nn.LSTM(batch_first=True)
-        self._pi_no_self_motion = torch.rand(size=[1])
+        self._lstm_no_self_motion = nn.LSTM(input_size=1, hidden_size=memory_slot_size, batch_first=True)
+        # self._lstm_no_self_motion_correction = nn.LSTM(batch_first=True)
+        self._pi_no_self_motion = nn.Parameter(torch.rand(size=[1]))
 
         self._auto_encoder = auto_encoder
         self._auto_encoder.requires_grad_(False)
@@ -38,7 +45,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._beta = 1  # TODO: find initial beta
 
         # TODO: find how to init the memory slots
-        self._memories = torch.rand(size=(4, 512, 64))
+        self._memories = nn.Parameter(torch.rand(size=(4, nb_memory_slots, memory_slot_size)))
         # 1 (visual inputs) + 3 (nb of RNNs) X nb of slots X encoding dimension
 
     @property
@@ -59,17 +66,23 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
     @staticmethod
     def _batch_vector_dot(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
-        return torch.squeeze(torch.matmul(torch.unsqueeze(v1, dim=-1), torch.unsqueeze(v2, dim=-2)))
+        return torch.squeeze(
+            torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1))
+        )
 
-    def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        # velocities: Batch X Sequence length X 3 (sine angular velocity, cosine angular velocity, linear speed)
+    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx) -> STEP_OUTPUT:
+        # velocities: Batch X Sequence length X 2 (angular velocity, linear speed)
         visual_input, velocities = batch
+        # TODO: calculate sine cosine angular velocities
 
-        y_enc = self._auto_encoder.forward(visual_input)  # Batch X Sequence length X encoding dimension
+        y_enc = self._auto_encoder.encode(torch.flatten(visual_input, start_dim=0, end_dim=1)).unflatten(
+            dim=0, sizes=visual_input.shape[:2]
+        )  # Batch X Sequence length X encoding dimension
 
         # Batch X Sequence length X nb of slots
         p_react = self._calculate_activation(self._beta, y_enc, self._visual_memories)
 
+        # TODO: fix the dtype of input data to match weights (Double vs Float)
         x_1, h_1 = self._lstm_angular_velocity(velocities[:, :, :2])  # x: Batch X Sequence length X encoding dimension
         x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities)
         x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=velocities.shape, device=self.device))
@@ -93,6 +106,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         return torch.exp_(entropy_coeff * cls._batch_vector_dot(activation_vector, memory))
 
     def configure_optimizers(self):
+        # TODO: set different learning rates for memories
         return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
 
     def update_beta(self, p_react: float):
@@ -111,7 +125,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
 def run_smp_experiment(config: DictConfig):
     original_cwd = hydra.utils.get_original_cwd()
-    data_dir = os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"])
+    data_dir = os.path.abspath(original_cwd + config["hardware"]["smp_dataset_folder_path"])
     rat_sequence_data_module = SequencedDataModule(
         data_dir=data_dir,
         config=config,
@@ -125,11 +139,15 @@ def run_smp_experiment(config: DictConfig):
     ae = LitAutoEncoder.load_from_checkpoint(
         checkpoint_path, in_channels=config["vae"]["in_channels"], net_config=config["vae"]["net_config"].values()
     )
+    ae.eval()
+    ae.freeze()
 
     smp = SpatialMemoryPipeline(
         learning_rate=config["smp"]["learning_rate"],
         auto_encoder=ae,
         entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
+        memory_slot_size=config["vae"]["latent_dim"],
+        nb_memory_slots=config["smp"]["nb_memory_slots"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

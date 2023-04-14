@@ -14,6 +14,8 @@ def main(config: DictConfig):
     if experiment_type == "vae":
         print(f"Running Experiment {experiment_type}...")
         run_vae_experiment(config)
+    elif experiment_type == "smp":
+        raise NotImplementedError(f"Experiment type {experiment_type} is unknown")
     else:
         raise NotImplementedError(f"Experiment type {experiment_type} is unknown")
 

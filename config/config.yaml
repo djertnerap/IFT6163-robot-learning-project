@@ -61,4 +61,4 @@ rl:
 logging:
     seed: 1234
     exp: test_traj
-    n_traj: 32
+    n_traj: 800

@@ -18,16 +18,22 @@ class SpatialMemoryPipeline(pl.LightningModule):
     def __init__(
         self,
         learning_rate: float,
+        memory_slot_learning_rate: float,
         auto_encoder: LitAutoEncoder,
         entropy_reactivation_target: float,
         memory_slot_size: int,
         nb_memory_slots: int,
+        probability_correction: float,
     ):
         super().__init__()
         self._learning_rate = learning_rate
+        self._memory_slot_learning_rate = memory_slot_learning_rate
+        self._probability_correction = probability_correction
 
         self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=memory_slot_size, batch_first=True)
-        # self._lstm_angular_velocity_correction = nn.LSTM(batch_first=True)
+        self._lstm_angular_velocity_correction = nn.LSTM(
+            input_size=2 * memory_slot_size, hidden_size=memory_slot_size, batch_first=True
+        )
         self._pi_angular_velocity = nn.Parameter(torch.rand(size=[1]))
 
         self._lstm_angular_velocity_and_speed = nn.LSTM(input_size=3, hidden_size=memory_slot_size, batch_first=True)
@@ -106,6 +112,18 @@ class SpatialMemoryPipeline(pl.LightningModule):
         x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
         # TODO: these do not account for correction step. Might need to do a for loop.
 
+        # Correction step
+        unscaled_visual_activations = self._gamma * self._batch_vector_dot(y_enc, self._visual_memories)
+        weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
+        angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories, dim=-2)
+        angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories, dim=-2)
+        no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
+
+        corrected_x_1, _ = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1))
+        should_be_corrected = torch.rand(size=(corrected_x_1.shape[:-1])) < self._probability_correction
+        x_1 = should_be_corrected * corrected_x_1 + (1 - should_be_corrected) * x_1
+
+        # p_pred
         p_pred = (
             self._calculate_activation(self._pi_angular_velocity, x_1, self._angular_velocity_memories)
             * self._calculate_activation(
@@ -126,8 +144,19 @@ class SpatialMemoryPipeline(pl.LightningModule):
         return torch.exp_(entropy_coeff * cls._batch_vector_dot(activation_vector, memory))
 
     def configure_optimizers(self):
-        # TODO: set different learning rates for memories
-        return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
+        return torch.optim.Adam(
+            [
+                {"params": self._memories, "lr": self._memory_slot_learning_rate},
+                {"params": self._pi_no_self_motion},
+                {"params": self._pi_angular_velocity},
+                {"params": self._pi_angular_velocity_and_speed},
+                {"params": self._gamma},
+                {"params": self._lstm_angular_velocity.parameters()},
+                {"params": self._lstm_angular_velocity_and_speed.parameters()},
+                {"params": self._lstm_no_self_motion.parameters()},
+            ],
+            lr=self._learning_rate,
+        )
 
     def update_beta(self, p_react: float):
         """
@@ -164,10 +193,12 @@ def run_smp_experiment(config: DictConfig):
 
     smp = SpatialMemoryPipeline(
         learning_rate=config["smp"]["learning_rate"],
+        memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
         auto_encoder=ae,
         entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
         memory_slot_size=config["vae"]["latent_dim"],
         nb_memory_slots=config["smp"]["nb_memory_slots"],
+        probability_correction=config["smp"]["prob_correction"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

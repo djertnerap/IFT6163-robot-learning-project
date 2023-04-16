@@ -1,3 +1,4 @@
+import functools
 import os
 
 import gymnasium as gym
@@ -10,16 +11,17 @@ import environ
 from utils.trajectory import generate_traj
 
 
-def run_random_walk(time: int, seed: int, dataset_folder_path: str, traj_nb, img_size=64, save_traj=True):
-    env = gym.make(
-        "MiniWorld-OpenField-v1",
-        view="agent",
-        render_mode="rgb_array",
-        obs_width=img_size,
-        obs_height=img_size,
-        window_width=img_size,
-        window_height=img_size,
-    )
+def run_random_walk(time: int, seed: int, dataset_folder_path: str, traj_nb, img_size=64, save_traj=True, env=None):
+    if env == None:
+        env = gym.make(
+            "MiniWorld-OpenField-v1",
+            view="agent",
+            render_mode="rgb_array",
+            obs_width=img_size,
+            obs_height=img_size,
+            window_width=img_size,
+            window_height=img_size,
+        )
     env.reset(seed=seed)
 
     imgdir = os.path.join(dataset_folder_path, "Images")

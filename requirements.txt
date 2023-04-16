@@ -1,8 +1,7 @@
 gymnasium
 numpy
-pyglet
 miniworld
-ratinabox
+ratinabox==1.4.1
 hydra-core==1.3.2
 tqdm
 --extra-index-url https://download.pytorch.org/whl/cu117

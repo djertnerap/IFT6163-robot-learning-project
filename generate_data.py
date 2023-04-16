@@ -1,13 +1,13 @@
+import faulthandler
 import os.path
 from pathlib import Path
 
+import gymnasium as gym
 import hydra
 from omegaconf import DictConfig
 
 import environ
 from agents.walker import run_random_walk
-
-import faulthandler
 
 
 def generate_data(cfg: DictConfig):
@@ -16,6 +16,16 @@ def generate_data(cfg: DictConfig):
     faulthandler.enable()
 
     data_path = os.path.abspath(hydra.utils.get_original_cwd() + cfg.hardware.smp_dataset_folder_path)
+
+    env = gym.make(
+        "MiniWorld-OpenField-v1",
+        view="agent",
+        render_mode="rgb_array",
+        obs_width=cfg.env.img_size,
+        obs_height=cfg.env.img_size,
+        window_width=cfg.env.img_size,
+        window_height=cfg.env.img_size,
+    )
     for i in range(cfg.logging.n_traj):
         exp_name = cfg.logging.exp + "_" + str(i)
         logdir = os.path.join(data_path, exp_name)
@@ -24,13 +34,11 @@ def generate_data(cfg: DictConfig):
 
         seed = cfg.logging.seed + i
 
-        run_random_walk(time=cfg.smp.episode_len, seed=seed, dataset_folder_path=logdir, traj_nb=i, img_size=cfg.env.img_size)
-
-
-# @hydra.main(config_path="config", config_name="config")
-# def main(cfg: DictConfig):
-#     generate_data(cfg)
-#
-#
-# if __name__ == "__main__":
-#     main()
+        run_random_walk(
+            time=cfg.smp.episode_len,
+            seed=seed,
+            dataset_folder_path=logdir,
+            traj_nb=i,
+            img_size=cfg.env.img_size,
+            env=env,
+        )

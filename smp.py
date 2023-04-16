@@ -24,11 +24,13 @@ class SpatialMemoryPipeline(pl.LightningModule):
         memory_slot_size: int,
         nb_memory_slots: int,
         probability_correction: float,
+        update_beta_every: int = 10,
     ):
         super().__init__()
         self._learning_rate = learning_rate
         self._memory_slot_learning_rate = memory_slot_learning_rate
         self._probability_correction = probability_correction
+        self._update_beta_every = update_beta_every
 
         self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=memory_slot_size, batch_first=True)
         self._lstm_angular_velocity_correction = nn.LSTM(
@@ -92,20 +94,22 @@ class SpatialMemoryPipeline(pl.LightningModule):
         )  # Batch X Sequence length X encoding dimension
 
         # Batch X Sequence length X nb of slots
-        p_react = self._calculate_activation(self._beta, y_enc, self._visual_memories)
+        y_raw_activation = self._batch_vector_dot(y_enc, self._visual_memories)
+        p_react = torch.exp(self._beta * y_raw_activation)
+
+        if self._update_beta_every % (batch_idx + 1) == 0:
+            self.update_beta(torch.mean(p_react))
 
         angular_velocity = velocities[:, :, 1]
         velocities = torch.concat(
             [
                 10
-                * (
-                    torch.concat(
-                        [
-                            torch.unsqueeze(torch.cos_(angular_velocity), dim=-1),
-                            torch.unsqueeze(torch.sin_(angular_velocity), dim=-1),
-                        ],
-                        dim=-1,
-                    )
+                * torch.concat(
+                    [
+                        torch.unsqueeze(torch.cos_(angular_velocity), dim=-1),
+                        torch.unsqueeze(torch.sin_(angular_velocity), dim=-1),
+                    ],
+                    dim=-1,
                 ),
                 torch.unsqueeze(velocities[:, :, 0], dim=-1),
             ],
@@ -114,11 +118,10 @@ class SpatialMemoryPipeline(pl.LightningModule):
         x_1, h_1 = self._lstm_angular_velocity(velocities[:, :, :2])  # x: Batch X Sequence length X encoding dimension
         x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities)
         x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
-        # TODO: these do not account for correction step. Might need to do a for loop.
 
         # Correction step
         # C Step 1 calculate weights
-        unscaled_visual_activations = self._gamma * self._batch_vector_dot(y_enc, self._visual_memories)
+        unscaled_visual_activations = self._gamma * y_raw_activation
         weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
         # C Step 2 Calculate weighted memories
@@ -153,6 +156,8 @@ class SpatialMemoryPipeline(pl.LightningModule):
         loss = torch.sum(p_react * torch.log(p_pred))
         self.log("train_loss", loss)
         self.log("batch", float(batch_idx))
+        # TODO: Storage step
+        # TODO: data loader len / progress bar
         return loss
 
     @classmethod
@@ -176,7 +181,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
             lr=self._learning_rate,
         )
 
-    def update_beta(self, p_react: float):
+    def update_beta(self, p_react: torch.Tensor):
         """
         Gets the newly regulated parameter beta used to calculate the target memory reactivation.
         **This should be called after every trajectory**
@@ -187,7 +192,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
             beta_logit += 0.001
         elif p_react > self._entropy_reactivation_target:
             beta_logit -= 0.001
-        self._beta = np.exp(beta_logit)
+        self._beta = float(np.exp(beta_logit))
 
 
 def run_smp_experiment(config: DictConfig):

@@ -10,7 +10,7 @@ import environ
 from utils.trajectory import generate_traj
 
 
-def run_random_walk(time: int, seed: int, dataset_folder_path: str, img_size=64, save_traj=True):
+def run_random_walk(time: int, seed: int, dataset_folder_path: str, traj_nb, img_size=64, save_traj=True):
     env = gym.make(
         "MiniWorld-OpenField-v1",
         view="agent",
@@ -28,9 +28,9 @@ def run_random_walk(time: int, seed: int, dataset_folder_path: str, img_size=64,
     pos = env.agent.pos
     direction = env.agent.dir
 
-    ag, traj = generate_traj((np.array([pos[0], pos[2]]) - 0.5) / 10, -direction, time)
+    ag, traj = generate_traj((np.array([pos[0], pos[2]]) - 0.5) / 10, -direction, traj_nb, time)
 
-    for t in tqdm(range(traj.shape[1]), desc="Render Images"):
+    for t in tqdm(range(traj.shape[1]), desc=f"Render Images for trajectory #{traj_nb}"):
         # insert tqdm for image saving here
         Image.fromarray(env.render()).save(os.path.join(imgdir, f"{t}.png"))
 

@@ -37,7 +37,7 @@ class Agent_New(Agent):
         return
 
 
-def generate_traj(pos, direction, T=600):
+def generate_traj(pos, direction, traj_nb, T=600):
     Env = Environment(params={"aspect": 1, "scale": 2.2})
 
     Ag = Agent_New(Env)
@@ -51,7 +51,7 @@ def generate_traj(pos, direction, T=600):
 
     dt = 50e-3
 
-    for i in tqdm(range(int(T / dt)), desc="Agent Updates"):
+    for i in tqdm(range(int(T / dt)), desc=f"Render Updates for trajectory #{traj_nb}"):
         Ag.update(dt=dt)
 
     traj = np.vstack((np.array(Ag.history["speed"]) * 10, -np.array(Ag.history["rotation"])))

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import os
 from pathlib import Path
+from typing import Iterator, Sized
 
 import hydra
 import lightning.pytorch as pl
@@ -11,7 +14,6 @@ from PIL import Image
 from torch.utils.data import DataLoader, Dataset, Sampler
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
-from typing import Iterator, Sized
 
 import generate_data
 from agents.walker import run_random_walk
@@ -31,13 +33,15 @@ class RatDataModule(pl.LightningDataModule):
         data_dir.mkdir(parents=True, exist_ok=True)
 
         if not any(data_dir.iterdir()):
-            generate_data.generate_data(self._config)
+            run_random_walk(1200, 0, self._data_dir, traj_nb=1, img_size=self._img_size, save_traj=False)
 
     def setup(self, stage: str):
         self._img_dataset = ImageFolder(root=str(Path(self._data_dir).parent), transform=ToTensor())
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
-        return DataLoader(dataset=self._img_dataset, shuffle=True, batch_size=self._batch_size, num_workers=self._num_workers)
+        return DataLoader(
+            dataset=self._img_dataset, shuffle=True, batch_size=self._batch_size, num_workers=self._num_workers
+        )
 
 
 class RandomTrajectoriesSampler(Sampler[int]):
@@ -49,13 +53,17 @@ class RandomTrajectoriesSampler(Sampler[int]):
         generator (Generator): Generator used in sampling.
     """
 
-    def __init__(self, data_source: Sized, generator=None) -> None:
+    def __init__(self, data_source: SequenceDataset, generator=None) -> None:
+        super().__init__(data_source)
+        self.data_source = data_source
         self.n_trajs = data_source.n_trajs
         self.chunks = data_source.traj_chunks
         self.generator = generator
 
     def __iter__(self) -> Iterator[int]:
-        rand_tensor =  torch.randperm(self.n_trajs, generator=self.generator) * self.chunks + torch.randint(high=self.chunks, size=(self.n_trajs,))
+        rand_tensor = torch.randperm(self.n_trajs, generator=self.generator) * self.chunks + torch.randint(
+            high=self.chunks, size=(self.n_trajs,)
+        )
         yield from iter(rand_tensor.tolist())
 
     def __len__(self) -> int:
@@ -120,20 +128,17 @@ class SequencedDataModule(RatDataModule):
         self._config = config
         self.seq_length = config.smp.bptt_unroll_length
 
-    def setup(self):
+    def setup(self, stage):
         self._seq_dataset = SequenceDataset(root=self._data_dir, seq_length=self.seq_length)
         self._sampler = RandomTrajectoriesSampler(self._seq_dataset)
 
-    # def prepare_data(self):
-    #     original_cwd = hydra.utils.get_original_cwd()
-    #     data_dir = os.path.abspath(original_cwd + self._config.hardware.smp_dataset_folder_path)
-    #     if not Path(data_dir).exists():
-    #         generate_data.generate_data(self._config)
+    def prepare_data(self):
+        original_cwd = hydra.utils.get_original_cwd()
+        data_dir = os.path.abspath(original_cwd + self._config.hardware.smp_dataset_folder_path)
+        if not Path(data_dir).exists():
+            generate_data.generate_data(self._config)
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
-        return DataLoader(dataset=self._seq_dataset,
-                          sampler=self._sampler,
-                          batch_size=self._batch_size,
-                          num_workers=self._num_workers)
-
-    
+        return DataLoader(
+            dataset=self._seq_dataset, sampler=self._sampler, batch_size=self._batch_size, num_workers=self._num_workers
+        )

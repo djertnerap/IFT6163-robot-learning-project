@@ -11,3 +11,4 @@ torchvision==0.14.1+cu117
 lightning[extra]
 pre-commit
 black==23.3.0
+tensorboard

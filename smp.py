@@ -48,6 +48,8 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._memories = nn.Parameter(torch.rand(size=(4, nb_memory_slots, memory_slot_size)))
         # 1 (visual inputs) + 3 (nb of RNNs) X nb of slots X encoding dimension
 
+        self._gamma = nn.Parameter(torch.rand((1,)))
+
     @property
     def _visual_memories(self) -> torch.Tensor:
         return torch.squeeze(self._memories[0])
@@ -70,10 +72,10 @@ class SpatialMemoryPipeline(pl.LightningModule):
             torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1))
         )
 
-    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx) -> STEP_OUTPUT:
-        # velocities: Batch X Sequence length X 2 (angular velocity, linear speed)
+    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> STEP_OUTPUT:
+        # visual_input: Vatch X Sequence length X nb channels X img_size X img_size
+        # velocities: Batch X Sequence length X 2 (linear speed, angular velocity)
         visual_input, velocities = batch
-        # TODO: calculate sine cosine angular velocities
 
         y_enc = self._auto_encoder.encode(torch.flatten(visual_input, start_dim=0, end_dim=1)).unflatten(
             dim=0, sizes=visual_input.shape[:2]
@@ -82,10 +84,26 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # Batch X Sequence length X nb of slots
         p_react = self._calculate_activation(self._beta, y_enc, self._visual_memories)
 
-        # TODO: fix the dtype of input data to match weights (Double vs Float)
+        angular_velocity = velocities[:, :, 1]
+        velocities = torch.concat(
+            [
+                10
+                * (
+                    torch.concat(
+                        [
+                            torch.unsqueeze(torch.cos_(angular_velocity), dim=-1),
+                            torch.unsqueeze(torch.sin_(angular_velocity), dim=-1),
+                        ],
+                        dim=-1,
+                    )
+                ),
+                torch.unsqueeze(velocities[:, :, 0], dim=-1),
+            ],
+            dim=-1,
+        )
         x_1, h_1 = self._lstm_angular_velocity(velocities[:, :, :2])  # x: Batch X Sequence length X encoding dimension
         x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities)
-        x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=velocities.shape, device=self.device))
+        x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
         # TODO: these do not account for correction step. Might need to do a for loop.
 
         p_pred = (
@@ -96,7 +114,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
             * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories)
         )  # Batch X Sequence length X nb of slots
 
-        loss = torch.sum(p_react * torch.log_(p_pred))
+        loss = torch.sum(p_react * torch.log(p_pred))
+        self.log("train_loss", loss)
+        self.log("batch", batch_idx)
         return loss
 
     @classmethod
@@ -151,5 +171,5 @@ def run_smp_experiment(config: DictConfig):
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
-    trainer = pl.Trainer(max_epochs=4, default_root_dir=original_cwd, logger=tb_logger)
+    trainer = pl.Trainer(max_epochs=4, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1)
     trainer.fit(smp, datamodule=rat_sequence_data_module)

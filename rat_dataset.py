@@ -87,7 +87,7 @@ class SequenceDataset(Dataset):
             self.n_trajs += 1
         for i in range(self.n_trajs):
             arrs.append(np.load(self._subfloder + str(i) + "/traj.npy")[None])
-        self.trajs = np.concatenate(arrs, axis=0)
+        self.trajs = np.concatenate(arrs, axis=0, dtype="float32")
 
         self.traj_chunks = self.trajs.shape[-1] // seq_length
 

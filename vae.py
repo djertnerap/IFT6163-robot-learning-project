@@ -12,7 +12,6 @@ from torch.nn import functional as F
 from rat_dataset import RatDataModule
 
 
-# TODO: Spatial memory pipeline like this
 class LitAutoEncoder(pl.LightningModule):
     def __init__(self, learning_rate: float, net_config: tuple, in_channels: int, latent_dim: int):
         super().__init__()
@@ -143,6 +142,6 @@ def run_vae_experiment(config: DictConfig):
         callbacks=[checkpoint_callback],
         default_root_dir=original_cwd,
         logger=tb_logger,
-        profiler="simple",
+        # profiler="simple",
     )
     trainer.fit(ae, datamodule=rat_data_module)

@@ -61,6 +61,9 @@ class RandomTrajectoriesSampler(Sampler[int]):
         self.generator = generator
 
     def __iter__(self) -> Iterator[int]:
+        # rand_tensor = torch.randperm(self.n_trajs, generator=self.generator) * self.chunks + torch.randint(
+        #     high=self.chunks, size=(self.n_trajs,)
+        # )
         rand_tensor = torch.randperm(self.n_trajs * self.chunks, generator=self.generator)
         yield from iter(rand_tensor.tolist())
 

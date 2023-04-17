@@ -53,18 +53,24 @@ class RandomTrajectoriesSampler(Sampler[int]):
         generator (Generator): Generator used in sampling.
     """
 
-    def __init__(self, data_source: SequenceDataset, generator=None) -> None:
+    def __init__(self, data_source: SequenceDataset, batch_size, generator=None) -> None:
         super().__init__(data_source)
         self.data_source = data_source
         self.n_trajs = data_source.n_trajs
         self.chunks = data_source.traj_chunks
+        self.batch_size = batch_size
         self.generator = generator
 
     def __iter__(self) -> Iterator[int]:
-        rand_tensor = torch.randperm(self.n_trajs, generator=self.generator) * self.chunks + torch.randint(
-            high=self.chunks, size=(self.n_trajs,)
-        )
-        yield from iter(rand_tensor.tolist())
+        idxs = np.arange(self.n_trajs*self.chunks).reshape((self.n_trajs,self.chunks))
+        for i in range(self.n_trajs):
+            idxs[i] = np.random.permutation(idxs[i])
+        for i in range(self.chunks):
+            so_idxs = np.random.permutation(self.n_trajs)
+            idxs[:,i:] = idxs[:,i:][so_idxs]
+        idxs = idxs.reshape(self.batch_size, -1, order='A')
+        rand_idxs = idxs.T.flatten()
+        yield from iter(rand_idxs.tolist())
 
     def __len__(self) -> int:
         return len(self.data_source)
@@ -130,7 +136,7 @@ class SequencedDataModule(RatDataModule):
 
     def setup(self, stage):
         self._seq_dataset = SequenceDataset(root=self._data_dir, seq_length=self.seq_length)
-        self._sampler = RandomTrajectoriesSampler(self._seq_dataset)
+        self._sampler = RandomTrajectoriesSampler(self._seq_dataset, self._batch_size)
 
     def prepare_data(self):
         original_cwd = hydra.utils.get_original_cwd()

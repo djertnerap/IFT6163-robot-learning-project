@@ -239,5 +239,8 @@ def run_smp_experiment(config: DictConfig):
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
-    trainer = pl.Trainer(max_epochs=1, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1)
+    trainer = pl.Trainer(max_epochs=2,
+                         default_root_dir=original_cwd,
+                         logger=tb_logger,
+                         log_every_n_steps=1)
     trainer.fit(smp, datamodule=rat_sequence_data_module)

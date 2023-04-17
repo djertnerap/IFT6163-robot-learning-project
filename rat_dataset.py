@@ -146,5 +146,11 @@ class SequencedDataModule(RatDataModule):
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(
-            dataset=self._seq_dataset, sampler=self._sampler, batch_size=self._batch_size, num_workers=self._num_workers
+            dataset=self._seq_dataset,
+            sampler=self._sampler,
+            batch_size=self._batch_size,
+            num_workers=self._num_workers,
+            pin_memory=True,
+            pin_memory_device="cuda",
+            persistent_workers=True,
         )

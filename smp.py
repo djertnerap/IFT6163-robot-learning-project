@@ -24,12 +24,14 @@ class SpatialMemoryPipeline(pl.LightningModule):
         memory_slot_size: int,
         nb_memory_slots: int,
         probability_correction: float,
+        probability_storage: float,
         update_beta_every: int = 10,
     ):
         super().__init__()
         self._learning_rate = learning_rate
         self._memory_slot_learning_rate = memory_slot_learning_rate
         self._probability_correction = probability_correction
+        self._probability_storage = probability_storage
         self._update_beta_every = update_beta_every
 
         self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=memory_slot_size, batch_first=True)
@@ -57,6 +59,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._beta = 1  # TODO: find initial beta
 
         # TODO: find how to init the memory slots
+        # TODO: use Sigmoid-LSTM
         self._memories = nn.Parameter(torch.rand(size=(4, nb_memory_slots, memory_slot_size)))
         # 1 (visual inputs) + 3 (nb of RNNs) X nb of slots X encoding dimension
 
@@ -89,17 +92,24 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # velocities: Batch X Sequence length X 2 (linear speed, angular velocity)
         visual_input, velocities = batch
 
+        # A: Calculate the target memories
+        # A1: encode observations
         y_enc = self._auto_encoder.encode(torch.flatten(visual_input, start_dim=0, end_dim=1)).unflatten(
             dim=0, sizes=visual_input.shape[:2]
         )  # Batch X Sequence length X encoding dimension
 
+        # A2: Apply the memory storage mask
+
+        # A3: calculate probabilities of reactivation
         # Batch X Sequence length X nb of slots
         y_raw_activation = self._batch_vector_dot(y_enc, self._visual_memories)
         p_react = torch.exp(self._beta * y_raw_activation)
 
+        # A3: update beta
         if self._update_beta_every % (batch_idx + 1) == 0:
             self.update_beta(torch.mean(p_react))
 
+        # B: Calculate the RNNs memory predictions
         angular_velocity = velocities[:, :, 1]
         velocities = torch.concat(
             [
@@ -120,21 +130,21 @@ class SpatialMemoryPipeline(pl.LightningModule):
         x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
 
         # Correction step
-        # C Step 1 calculate weights
+        # C1: calculate weights
         unscaled_visual_activations = self._gamma * y_raw_activation
         weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
-        # C Step 2 Calculate weighted memories
+        # C2: Calculate weighted memories
         angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories, dim=-2)
         angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories, dim=-2)
         no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
 
-        # C Step 3 Calculate P_correction mask
+        # C3: Calculate P_correction mask
         should_be_corrected = torch.unsqueeze(
             torch.rand(size=(p_react.shape[:-1]), device=self.device) < self._probability_correction, dim=-1
         )
 
-        # C Step 4 Apply corrections
+        # C4: Apply corrections
         corrected_x_1, _ = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1))
         x_1 = should_be_corrected * corrected_x_1 + ~should_be_corrected * x_1
         corrected_x_2, _ = self._lstm_angular_velocity_and_speed_correction(
@@ -144,7 +154,14 @@ class SpatialMemoryPipeline(pl.LightningModule):
         corrected_x_3, _ = self._lstm_no_self_motion_correction(torch.concat([x_3, no_self_motion_x_tilde], dim=-1))
         x_3 = should_be_corrected * corrected_x_3 + ~should_be_corrected * x_3
 
-        # p_pred
+        # D: Calculate the predictions of the RNNs
+        # D1: Apply the memory storage mask
+        should_be_stored = torch.unsqueeze(
+            torch.rand(size=(x_1.shape[:-1]), device=self.device) < self._probability_storage, dim=-1
+        )
+
+
+        # D2: Calculate the predictions
         p_pred = (
             self._calculate_activation(self._pi_angular_velocity, x_1, self._angular_velocity_memories)
             * self._calculate_activation(
@@ -153,11 +170,11 @@ class SpatialMemoryPipeline(pl.LightningModule):
             * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories)
         )  # Batch X Sequence length X nb of slots
 
+        # E: Calculate the loss
         loss = torch.sum(p_react * torch.log(p_pred))
         self.log("train_loss", loss)
         self.log("batch", float(batch_idx))
         # TODO: Storage step
-        # TODO: data loader len / progress bar
         return loss
 
     @classmethod
@@ -222,6 +239,7 @@ def run_smp_experiment(config: DictConfig):
         memory_slot_size=config["vae"]["latent_dim"],
         nb_memory_slots=config["smp"]["nb_memory_slots"],
         probability_correction=config["smp"]["prob_correction"],
+        probability_storage=config["smp"]["prob_storage"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

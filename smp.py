@@ -156,10 +156,6 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # D: Calculate the predictions of the RNNs
         # D1: Apply the memory storage mask
-        should_be_stored = torch.unsqueeze(
-            torch.rand(size=(x_1.shape[:-1]), device=self.device) < self._probability_storage, dim=-1
-        )
-
 
         # D2: Calculate the predictions
         p_pred = (

@@ -25,6 +25,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
         nb_memory_slots: int,
         probability_correction: float,
         probability_storage: float,
+        hidden_size_RNN1: int,
+        hidden_size_RNN2: int,
+        hidden_size_RNN3: int,
         update_beta_every: int = 10,
     ):
         super().__init__()
@@ -34,23 +37,26 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._probability_storage = probability_storage
         self._update_beta_every = update_beta_every
 
-        self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=memory_slot_size, batch_first=True)
+        self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=hidden_size_RNN1, batch_first=True)
         self._lstm_angular_velocity_correction = nn.LSTM(
-            input_size=2 * memory_slot_size, hidden_size=memory_slot_size, batch_first=True
+            input_size=2 * hidden_size_RNN1, hidden_size=hidden_size_RNN1, batch_first=True
         )
         self._pi_angular_velocity = nn.Parameter(torch.rand(size=[1]))
+        self._angular_velocity_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN1)))
 
-        self._lstm_angular_velocity_and_speed = nn.LSTM(input_size=3, hidden_size=memory_slot_size, batch_first=True)
+        self._lstm_angular_velocity_and_speed = nn.LSTM(input_size=3, hidden_size=hidden_size_RNN2, batch_first=True)
         self._lstm_angular_velocity_and_speed_correction = nn.LSTM(
-            input_size=2 * memory_slot_size, hidden_size=memory_slot_size, batch_first=True
+            input_size=2 * hidden_size_RNN2, hidden_size=hidden_size_RNN2, batch_first=True
         )
         self._pi_angular_velocity_and_speed = nn.Parameter(torch.rand(size=[1]))
+        self._angular_velocity_and_speed_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN2)))
 
-        self._lstm_no_self_motion = nn.LSTM(input_size=1, hidden_size=memory_slot_size, batch_first=True)
+        self._lstm_no_self_motion = nn.LSTM(input_size=1, hidden_size=hidden_size_RNN3, batch_first=True)
         self._lstm_no_self_motion_correction = nn.LSTM(
-            input_size=2 * memory_slot_size, hidden_size=memory_slot_size, batch_first=True
+            input_size=2 * hidden_size_RNN3, hidden_size=hidden_size_RNN3, batch_first=True
         )
         self._pi_no_self_motion = nn.Parameter(torch.rand(size=[1]))
+        self._no_self_motion_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN3)))
 
         self._auto_encoder = auto_encoder
         self._auto_encoder.requires_grad_(False)
@@ -58,28 +64,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._entropy_reactivation_target = entropy_reactivation_target
         self._beta = 1  # TODO: find initial beta
 
-        # TODO: find how to init the memory slots
         # TODO: use Sigmoid-LSTM
-        self._memories = nn.Parameter(torch.rand(size=(4, nb_memory_slots, memory_slot_size)))
-        # 1 (visual inputs) + 3 (nb of RNNs) X nb of slots X encoding dimension
-
+        self._visual_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, memory_slot_size)), requires_grad=False)
         self._gamma = nn.Parameter(torch.rand((1,)))
-
-    @property
-    def _visual_memories(self) -> torch.Tensor:
-        return torch.squeeze(self._memories[0])
-
-    @property
-    def _angular_velocity_memories(self) -> torch.Tensor:
-        return torch.squeeze(self._memories[1])
-
-    @property
-    def _angular_velocity_and_speed_memories(self) -> torch.Tensor:
-        return torch.squeeze(self._memories[2])
-
-    @property
-    def _no_self_motion_memories(self) -> torch.Tensor:
-        return torch.squeeze(self._memories[3])
 
     @staticmethod
     def _batch_vector_dot(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
@@ -107,7 +94,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # A3: update beta
         if self._update_beta_every % (batch_idx + 1) == 0:
-            self.update_beta(torch.mean(p_react))
+            self.update_beta(-torch.sum(p_react * torch.log(p_react)))
 
         # B: Calculate the RNNs memory predictions
         angular_velocity = velocities[:, :, 1]
@@ -193,7 +180,10 @@ class SpatialMemoryPipeline(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(
             [
-                {"params": self._memories, "lr": self._memory_slot_learning_rate},
+                {"params": self._visual_memories, "lr": self._memory_slot_learning_rate},
+                {"params": self._angular_velocity_memories, "lr": self._memory_slot_learning_rate},
+                {"params": self._angular_velocity_and_speed_memories, "lr": self._memory_slot_learning_rate},
+                {"params": self._no_self_motion_memories, "lr": self._memory_slot_learning_rate},
                 {"params": self._pi_no_self_motion},
                 {"params": self._pi_angular_velocity},
                 {"params": self._pi_angular_velocity_and_speed},
@@ -247,10 +237,13 @@ def run_smp_experiment(config: DictConfig):
         nb_memory_slots=config["smp"]["nb_memory_slots"],
         probability_correction=config["smp"]["prob_correction"],
         probability_storage=config["smp"]["prob_storage"],
+        hidden_size_RNN1=config["smp"]["hidden_size_RNN1"],
+        hidden_size_RNN2=config["smp"]["hidden_size_RNN2"],
+        hidden_size_RNN3=config["smp"]["hidden_size_RNN3"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        max_epochs=1, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1, profiler="simple"
+        max_epochs=4, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1, profiler="simple"
     )
     trainer.fit(smp, datamodule=rat_sequence_data_module)

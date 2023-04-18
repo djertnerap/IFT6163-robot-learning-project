@@ -47,6 +47,9 @@ smp:
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2
     ae_checkpoint_path: "/checkpoints/rat_autoencoder-epoch=402-train_loss=0.00.ckpt"
+    hidden_size_RNN1: 32
+    hidden_size_RNN2: 128
+    hidden_size_RNN3: 128
 
 rl:
     bptt_unroll_length: 50

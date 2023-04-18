@@ -62,13 +62,13 @@ class RandomTrajectoriesSampler(Sampler[int]):
         self.generator = generator
 
     def __iter__(self) -> Iterator[int]:
-        idxs = np.arange(self.n_trajs*self.chunks).reshape((self.n_trajs,self.chunks))
+        idxs = np.arange(self.n_trajs * self.chunks).reshape((self.n_trajs, self.chunks))
         for i in range(self.n_trajs):
             idxs[i] = np.random.permutation(idxs[i])
         for i in range(self.chunks):
             so_idxs = np.random.permutation(self.n_trajs)
-            idxs[:,i:] = idxs[:,i:][so_idxs]
-        idxs = idxs.reshape(self.batch_size, -1, order='A')
+            idxs[:, i:] = idxs[:, i:][so_idxs]
+        idxs = idxs.reshape(self.batch_size, -1, order="A")
         rand_idxs = idxs.T.flatten()
         yield from iter(rand_idxs.tolist())
 
@@ -152,5 +152,5 @@ class SequencedDataModule(RatDataModule):
             num_workers=self._num_workers,
             pin_memory=True,
             pin_memory_device="cuda",
-            persistent_workers=True,
+            persistent_workers=True if self._num_workers > 0 else False,
         )

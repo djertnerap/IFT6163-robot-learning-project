@@ -103,7 +103,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # A3: calculate probabilities of reactivation
         # Batch X Sequence length X nb of slots
         y_raw_activation = self._batch_vector_dot(y_enc, self._visual_memories)
-        p_react = torch.exp(self._beta * y_raw_activation)
+        p_react = nn.functional.softmax(torch.exp(self._beta * y_raw_activation), dim=-1)
 
         # A3: update beta
         if self._update_beta_every % (batch_idx + 1) == 0:
@@ -129,6 +129,10 @@ class SpatialMemoryPipeline(pl.LightningModule):
         x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities)
         x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
 
+        x_1 = nn.functional.dropout(x_1, p=0.5)
+        x_2 = nn.functional.dropout(x_2, p=0.5)
+        x_3 = nn.functional.dropout(x_3, p=0.5)
+
         # Correction step
         # C1: calculate weights
         unscaled_visual_activations = self._gamma * y_raw_activation
@@ -146,28 +150,36 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # C4: Apply corrections
         corrected_x_1, _ = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1))
+        corrected_x_1 = nn.functional.dropout(corrected_x_1, p=0.5)
         x_1 = should_be_corrected * corrected_x_1 + ~should_be_corrected * x_1
         corrected_x_2, _ = self._lstm_angular_velocity_and_speed_correction(
             torch.concat([x_2, angular_velocity_and_speed_x_tilde], dim=-1)
         )
+        corrected_x_2 = nn.functional.dropout(corrected_x_2, p=0.5)
         x_2 = should_be_corrected * corrected_x_2 + ~should_be_corrected * x_2
         corrected_x_3, _ = self._lstm_no_self_motion_correction(torch.concat([x_3, no_self_motion_x_tilde], dim=-1))
+        corrected_x_3 = nn.functional.dropout(corrected_x_3, p=0.5)
         x_3 = should_be_corrected * corrected_x_3 + ~should_be_corrected * x_3
 
         # D: Calculate the predictions of the RNNs
         # D1: Apply the memory storage mask
 
         # D2: Calculate the predictions
-        p_pred = (
+        p_pred = nn.functional.softmax(
             self._calculate_activation(self._pi_angular_velocity, x_1, self._angular_velocity_memories)
             * self._calculate_activation(
                 self._pi_angular_velocity_and_speed, x_2, self._angular_velocity_and_speed_memories
             )
-            * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories)
+            * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories),
+            dim=-1,
         )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss
-        loss = torch.sum(p_react * torch.log(p_pred))
+        loss = nn.functional.cross_entropy(torch.flatten(p_pred, end_dim=1), torch.flatten(p_react, end_dim=1))
+
+        # print(loss)
+        if torch.isnan(loss):
+            print("NAN")
         self.log("train_loss", loss)
         self.log("batch", float(batch_idx))
         # TODO: Storage step
@@ -239,8 +251,7 @@ def run_smp_experiment(config: DictConfig):
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
-    trainer = pl.Trainer(max_epochs=2,
-                         default_root_dir=original_cwd,
-                         logger=tb_logger,
-                         log_every_n_steps=1)
+    trainer = pl.Trainer(
+        max_epochs=1, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1, profiler="simple"
+    )
     trainer.fit(smp, datamodule=rat_sequence_data_module)

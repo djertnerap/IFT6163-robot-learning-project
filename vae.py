@@ -130,7 +130,7 @@ def run_vae_experiment(config: DictConfig):
 
     checkpoint_callback = ModelCheckpoint(
         monitor="train_loss",
-        filename="rat_autoencoder-{epoch:02d}-{train_loss:.2f}",
+        filename="rat_ae-{epoch:02d}-{train_loss:.6f}",
         save_top_k=3,
         mode="min",
     )

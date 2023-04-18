@@ -140,3 +140,4 @@ images/
 lightning_logs/
 data/
 test.ipynb
+checkpoints/

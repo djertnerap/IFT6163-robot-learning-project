@@ -165,13 +165,12 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # D1: Apply the memory storage mask
 
         # D2: Calculate the predictions
-        p_pred = nn.functional.softmax(
+        p_pred = (
             self._calculate_activation(self._pi_angular_velocity, x_1, self._angular_velocity_memories)
             * self._calculate_activation(
                 self._pi_angular_velocity_and_speed, x_2, self._angular_velocity_and_speed_memories
             )
-            * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories),
-            dim=-1,
+            * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories)
         )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss

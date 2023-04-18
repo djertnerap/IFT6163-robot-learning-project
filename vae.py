@@ -137,8 +137,8 @@ def run_vae_experiment(config: DictConfig):
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        max_steps=200_000,
-        max_epochs=4,
+        max_steps=config["vae"]["max_steps"],
+        max_epochs=config["vae"]["max_epochs"],
         callbacks=[checkpoint_callback],
         default_root_dir=original_cwd,
         logger=tb_logger,

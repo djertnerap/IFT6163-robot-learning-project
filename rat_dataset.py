@@ -40,7 +40,13 @@ class RatDataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(
-            dataset=self._img_dataset, shuffle=True, batch_size=self._batch_size, num_workers=self._num_workers
+            dataset=self._img_dataset,
+            shuffle=True,
+            batch_size=self._batch_size,
+            num_workers=self._num_workers,
+            pin_memory=True,
+            pin_memory_device="cuda",
+            persistent_workers=True if self._num_workers > 0 else False,
         )
 
 
@@ -130,6 +136,8 @@ class SequencedDataModule(RatDataModule):
         img_size: int = 64,
     ):
         super().__init__(data_dir=data_dir, batch_size=batch_size, num_workers=num_workers, img_size=img_size)
+        self._sampler = None
+        self._seq_dataset = None
         self._bptt_unroll_length = bptt_unroll_length
         self._config = config
         self.seq_length = config.smp.bptt_unroll_length

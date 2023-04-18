@@ -1,4 +1,4 @@
-experiment_type: "smp"  # ["vae", "smp"]
+experiment_type: "vae"  # ["vae", "smp"]
 
 hardware:
     use_gpu: True
@@ -6,7 +6,7 @@ hardware:
     matmul_precision: "high"
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
     smp_dataset_folder_path: '/data'
-    num_data_loader_workers: 0  # For now, it looks like no workers is faster but if we have a bigger dataset, then this might come in handy
+    num_data_loader_workers: 1  # Set to you numbers of CPU cores for smp
 
 env:
     img_size: 64
@@ -16,8 +16,8 @@ vae:
     do_train: True
     train_batch_size: 50
     eval_batch_size: 50
-    n_epochs: 1
-    n_iter: 1
+    max_epochs: 420
+    max_steps: 200000
     in_channels: 3
     latent_dim: 64  # Dimension of the output vector of the encoder
     learning_rate: 1e-4
@@ -46,7 +46,8 @@ smp:
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2
-    ae_checkpoint_path: "/outputs/2023-04-14/11-31-04/lightning_logs/version_0/checkpoints/rat_autoencoder-epoch=02-train_loss=0.28.ckpt"
+#    ae_checkpoint_path: "/outputs/2023-04-14/11-31-04/lightning_logs/version_0/checkpoints/rat_autoencoder-epoch=02-train_loss=0.28.ckpt"
+    ae_checkpoint_path: "/outputs/2023-04-15/20-39-53/lightning_logs/version_0/checkpoints/rat_autoencoder-epoch=03-train_loss=0.24.ckpt"
 
 rl:
     bptt_unroll_length: 50

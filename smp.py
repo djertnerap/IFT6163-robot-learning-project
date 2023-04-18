@@ -88,7 +88,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         )
 
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> STEP_OUTPUT:
-        # visual_input: Vatch X Sequence length X nb channels X img_size X img_size
+        # visual_input: Batch X Sequence length X nb channels X img_size X img_size
         # velocities: Batch X Sequence length X 2 (linear speed, angular velocity)
         visual_input, velocities = batch
 

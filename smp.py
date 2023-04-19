@@ -145,16 +145,13 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
 
                 # C4: Apply corrections
-                x_1, h_1 = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1), (x_1, h_1))
+                x_1, h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (x_1, h_1))
                 out_1 = nn.functional.dropout(x_1, p=0.5)
                 
-                x_2, h_2 = self._lstm_angular_velocity_and_speed_correction(
-                    torch.concat([x_2, angular_velocity_and_speed_x_tilde], dim=-1),
-                    (x_2, h_2)
-                )
+                x_2, h_2 = self._lstm_angular_velocity_and_speed_correction(angular_velocity_and_speed_x_tilde, (x_2, h_2))
                 out_2 = nn.functional.dropout(x_2, p=0.5)
                 
-                x_3, h_3 = self._lstm_no_self_motion_correction(torch.concat([x_3, no_self_motion_x_tilde], dim=-1), (x_3, h_3))
+                x_3, h_3 = self._lstm_no_self_motion_correction(no_self_motion_x_tilde, (x_3, h_3))
                 out_3 = nn.functional.dropout(x_3, p=0.5)
 
             xs_1[:, t, :] = out_1

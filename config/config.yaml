@@ -6,7 +6,7 @@ hardware:
     matmul_precision: "high"
     dataset_folder_path: '/images/rat'  # Needs a "/" at the beginning
     smp_dataset_folder_path: '/data'
-    num_data_loader_workers: 1  # Set to you numbers of CPU cores for smp
+    num_data_loader_workers: 8  # Set to you numbers of CPU cores for smp
 
 env:
     img_size: 64

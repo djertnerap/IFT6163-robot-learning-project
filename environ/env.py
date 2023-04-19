@@ -1,9 +1,11 @@
+import math
+
 from abc import ABC
 from typing import Optional
 
 import numpy as np
 from gymnasium import spaces
-from miniworld.entity import Agent
+from miniworld.entity import Agent, MeshEnt
 from miniworld.miniworld import MiniWorldEnv
 from miniworld.params import DEFAULT_PARAMS
 
@@ -166,6 +168,48 @@ class OpenField(RatWorldEnv):
         )
 
         # colorlist = list(COLOR_NAMES)
+
+        self.place_entity(
+            MeshEnt(mesh_name="building", height=20),
+            pos=np.array([40, 0, 35]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="barrel", height=25),
+            pos=np.array([-40, 0, 20]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="cone", height=25),
+            pos=np.array([-30, 0, -20]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="duckie", height=25),
+            pos=np.array([0, 0, 35]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="tree", height=25),
+            pos=np.array([0, 0, -35]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="potion", height=25),
+            pos=np.array([40, 0, -35]),
+            dir=-math.pi,
+        )
+
+        self.place_entity(
+            MeshEnt(mesh_name="office_chair", height=25),
+            pos=np.array([40, 0, 12]),
+            dir=-math.pi,
+        )
 
         self.place_agent()
 

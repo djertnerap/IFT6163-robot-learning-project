@@ -9,6 +9,7 @@ from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from omegaconf import DictConfig
 from torch import nn
+import matplotlib.pyplot as plt
 
 from rat_dataset import SequencedDataModule
 from vae import LitAutoEncoder
@@ -21,6 +22,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         learning_rate: float,
         memory_slot_learning_rate: float,
         auto_encoder: LitAutoEncoder,
+        beta: float,
         entropy_reactivation_target: float,
         memory_slot_size: int,
         hidden_size_RNN1: int,
@@ -63,7 +65,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._auto_encoder.requires_grad_(False)
 
         self._entropy_reactivation_target = entropy_reactivation_target
-        self._beta = 1  # TODO: find initial beta (nooooo =()
+        self._beta = beta  # TODO: find initial beta (nooooo =()
 
         # TODO: use Sigmoid-LSTM
         self._visual_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, memory_slot_size)), requires_grad=False)
@@ -72,7 +74,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
     @staticmethod
     def _batch_vector_dot(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
         return torch.squeeze(
-            torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1)) # Just matrix multiplication but with the correct dims
+            torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1))  # Just matrix multiplication but with the correct dims
         )
 
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> STEP_OUTPUT:
@@ -94,8 +96,12 @@ class SpatialMemoryPipeline(pl.LightningModule):
         p_react = nn.functional.softmax(torch.exp(self._beta * y_raw_activation), dim=-1)
 
         # A3: update beta
-        if self._update_beta_every % (batch_idx + 1) == 0:
-            self.update_beta(-torch.sum(p_react * torch.log(p_react)))
+        # if self._update_beta_every % (batch_idx + 1) == 0:  # TODO: this happens at batch: 1, 2, 5, 10 of 250
+        if (batch_idx + 1) % self._update_beta_every == 0:  # This would be the correct way to do it
+            p_react_entropy = -torch.sum(p_react * torch.log(p_react))  # is always NaN
+            # if p_react_entropy.isnan() > 0:
+            #     print("p_react_entropy is NaN")
+            self.update_beta(p_react_entropy)
 
         # A4: Prepare data
         angular_velocity = velocities[:, :, 1]
@@ -175,7 +181,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # print(loss)
         if torch.isnan(loss):
-            print("NAN")
+            print("loss is NaN")
         self.log("train_loss", loss)
         self.log("batch", float(batch_idx))
         # TODO: Storage step
@@ -205,16 +211,16 @@ class SpatialMemoryPipeline(pl.LightningModule):
             lr=self._learning_rate,
         )
 
-    def update_beta(self, p_react: torch.Tensor):
+    def update_beta(self, p_react_entropy: torch.Tensor):
         """
         Gets the newly regulated parameter beta used to calculate the target memory reactivation.
         **This should be called after every trajectory**
         """
         beta_logit = np.log(self._beta)
         # Perhaps we could apply a certain rounding that defines when they are close enough for us not to change it?
-        if p_react < self._entropy_reactivation_target:
+        if p_react_entropy < self._entropy_reactivation_target:
             beta_logit += 0.001
-        elif p_react > self._entropy_reactivation_target:
+        elif p_react_entropy > self._entropy_reactivation_target:
             beta_logit -= 0.001
         self._beta = float(np.exp(beta_logit))
 
@@ -249,6 +255,7 @@ def run_smp_experiment(config: DictConfig):
         learning_rate=config["smp"]["learning_rate"],
         memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
         auto_encoder=ae,
+        beta=config["smp"]["beta"],
         entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
         memory_slot_size=config["vae"]["latent_dim"],
         nb_memory_slots=config["smp"]["nb_memory_slots"],
@@ -261,6 +268,6 @@ def run_smp_experiment(config: DictConfig):
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        max_epochs=4, default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1, profiler="simple"
+        max_epochs=config['smp']['max_epochs'], max_steps=config['smp']['max_steps'], default_root_dir=original_cwd, logger=tb_logger, log_every_n_steps=1, profiler="simple"
     )
     trainer.fit(smp, datamodule=rat_sequence_data_module)

@@ -29,6 +29,6 @@ TODO: what to run, how to configure stuff and environments
 
 ## Authors
 
-- Aleksei Efremov (aleksei.efremov@umontreal.ca)
+- Aleksei Efremov (aleksei.efremov@mila.quebec)
 - Kevin Lessard (kevin.lessard@umontreal.ca)
 - Jérémy Parent (jeremy.parent@umontreal.ca)

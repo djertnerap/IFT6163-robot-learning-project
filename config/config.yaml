@@ -34,7 +34,10 @@ vae:
 # Spatial Memory Pipeline (SMP) parameters
 smp:
     n_iter: 2 #200000
+    max_epochs: 4
+    max_steps: 200000
     entropy_reactivation_target: 0.5  # H_react
+    beta: 1.0  # beta
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0000625  # P_storage
     nb_memory_slots: 512  # S
@@ -60,6 +63,27 @@ rl:
     rnn_lr: 1e-3
     memory_embed_lr: 3e-3
     rnn_dropout: 0.5
+
+rlsmp:
+    n_iter: 2 #200000
+    max_epochs: 10
+    max_steps: 200000
+    entropy_reactivation_target: 1.0  # H_react
+    prob_correction: 0.1  # P_correction
+    prob_storage: 0.0001  # P_storage
+    nb_memory_slots: 1024  # S
+    episode_len: 25
+    bptt_unroll_length: 50
+    batch_size: 32
+    memory_slot_learning_rate: 0.01
+    learning_rate: 0.003
+    rnn_dropout: 0.5
+    adam_beta1: 0.9  # beta_1
+    adam_beta2: 0.999  # beta_2
+    ae_checkpoint_path: "/checkpoints/rat_autoencoder-epoch=402-train_loss=0.00.ckpt"
+    hidden_size_RNN1: 32
+    hidden_size_RNN2: 768
+    hidden_size_RNN3: 128
 
 logging:
     seed: 1234

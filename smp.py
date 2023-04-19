@@ -21,40 +21,37 @@ class SpatialMemoryPipeline(pl.LightningModule):
         memory_slot_learning_rate: float,
         auto_encoder: LitAutoEncoder,
         entropy_reactivation_target: float,
-        memory_slot_size: int,
-        nb_memory_slots: int,
-        probability_correction: float,
-        probability_storage: float,
         hidden_size_RNN1: int,
         hidden_size_RNN2: int,
         hidden_size_RNN3: int,
+        nb_memory_slots: int,
+        probability_correction: float,
+        probability_storage: float,
         update_beta_every: int = 10,
     ):
         super().__init__()
         self._learning_rate = learning_rate
         self._memory_slot_learning_rate = memory_slot_learning_rate
+        self._nb_memory_slots = nb_memory_slots
         self._probability_correction = probability_correction
         self._probability_storage = probability_storage
         self._update_beta_every = update_beta_every
+        self._hidden_size_RNN1 = hidden_size_RNN1
+        self._hidden_size_RNN2 = hidden_size_RNN2
+        self._hidden_size_RNN3 = hidden_size_RNN3
 
-        self._lstm_angular_velocity = nn.LSTM(input_size=2, hidden_size=hidden_size_RNN1, batch_first=True)
-        self._lstm_angular_velocity_correction = nn.LSTM(
-            input_size=2 * hidden_size_RNN1, hidden_size=hidden_size_RNN1, batch_first=True
-        )
+        self._lstm_angular_velocity = nn.LSTMCell(input_size=2, hidden_size=hidden_size_RNN1)
+        self._lstm_angular_velocity_correction = nn.LSTMCell(input_size=hidden_size_RNN1, hidden_size=hidden_size_RNN1)
         self._pi_angular_velocity = nn.Parameter(torch.rand(size=[1]))
         self._angular_velocity_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN1)))
 
-        self._lstm_angular_velocity_and_speed = nn.LSTM(input_size=3, hidden_size=hidden_size_RNN2, batch_first=True)
-        self._lstm_angular_velocity_and_speed_correction = nn.LSTM(
-            input_size=2 * hidden_size_RNN2, hidden_size=hidden_size_RNN2, batch_first=True
-        )
+        self._lstm_angular_velocity_and_speed = nn.LSTMCell(input_size=3, hidden_size=hidden_size_RNN2)
+        self._lstm_angular_velocity_and_speed_correction = nn.LSTMCell(input_size=hidden_size_RNN2, hidden_size=hidden_size_RNN2)
         self._pi_angular_velocity_and_speed = nn.Parameter(torch.rand(size=[1]))
         self._angular_velocity_and_speed_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN2)))
 
-        self._lstm_no_self_motion = nn.LSTM(input_size=1, hidden_size=hidden_size_RNN3, batch_first=True)
-        self._lstm_no_self_motion_correction = nn.LSTM(
-            input_size=2 * hidden_size_RNN3, hidden_size=hidden_size_RNN3, batch_first=True
-        )
+        self._lstm_no_self_motion = nn.LSTMCell(input_size=1, hidden_size=hidden_size_RNN3)
+        self._lstm_no_self_motion_correction = nn.LSTMCell(input_size=hidden_size_RNN3, hidden_size=hidden_size_RNN3)
         self._pi_no_self_motion = nn.Parameter(torch.rand(size=[1]))
         self._no_self_motion_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, hidden_size_RNN3)))
 
@@ -62,7 +59,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._auto_encoder.requires_grad_(False)
 
         self._entropy_reactivation_target = entropy_reactivation_target
-        self._beta = 1  # TODO: find initial beta
+        self._beta = 1  # TODO: find initial beta (nooooo =()
 
         # TODO: use Sigmoid-LSTM
         self._visual_memories = nn.Parameter(torch.rand(size=(nb_memory_slots, memory_slot_size)), requires_grad=False)
@@ -71,7 +68,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
     @staticmethod
     def _batch_vector_dot(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
         return torch.squeeze(
-            torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1))
+            torch.matmul(torch.unsqueeze(torch.unsqueeze(v1, dim=-2), dim=-2), torch.unsqueeze(v2, dim=-1)) # Just matrix multiplication but with the correct dims
         )
 
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> STEP_OUTPUT:
@@ -96,7 +93,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         if self._update_beta_every % (batch_idx + 1) == 0:
             self.update_beta(-torch.sum(p_react * torch.log(p_react)))
 
-        # B: Calculate the RNNs memory predictions
+        # A4: Prepare data
         angular_velocity = velocities[:, :, 1]
         velocities = torch.concat(
             [
@@ -112,52 +109,64 @@ class SpatialMemoryPipeline(pl.LightningModule):
             ],
             dim=-1,
         )
-        x_1, h_1 = self._lstm_angular_velocity(velocities[:, :, :2])  # x: Batch X Sequence length X encoding dimension
-        x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities)
-        x_3, h_3 = self._lstm_no_self_motion(torch.empty(size=list(velocities.shape[:2]) + [1], device=self.device))
 
-        x_1 = nn.functional.dropout(x_1, p=0.5)
-        x_2 = nn.functional.dropout(x_2, p=0.5)
-        x_3 = nn.functional.dropout(x_3, p=0.5)
+        # B: For loop
+        x_1, h_1 = torch.zeros(self._hidden_size_RNN1), torch.zeros(self._hidden_size_RNN1)
+        x_2, h_2 = torch.zeros(self._hidden_size_RNN2), torch.zeros(self._hidden_size_RNN2)
+        x_3, h_3 = torch.zeros(self._hidden_size_RNN3), torch.zeros(self._hidden_size_RNN3)
+        
+        xs_1 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN1])
+        xs_2 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN2])
+        xs_3 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN3])
+        
+        for t in range(velocities.shape[1]):
+            x_1, h_1 = self._lstm_angular_velocity(velocities[:, t, :2].squeeze(), (x_1, h_1))  # x: Batch X 1 X encoding dimension
+            x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities[:, t, :].squeeze(), (x_2, h_2))
+            x_3, h_3 = self._lstm_no_self_motion(torch.ones(size=velocities.shape[0], device=self.device), (x_3, h_3)) # Do we need another dim?
 
-        # Correction step
-        # C1: calculate weights
-        unscaled_visual_activations = self._gamma * y_raw_activation
-        weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
+            out_1 = nn.functional.dropout(x_1, p=0.5)
+            out_2 = nn.functional.dropout(x_2, p=0.5)
+            out_3 = nn.functional.dropout(x_3, p=0.5)
 
-        # C2: Calculate weighted memories
-        angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories, dim=-2)
-        angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories, dim=-2)
-        no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
+            # Correction step
+            # C1: Decide if the correction is happening
+            if np.random.random() < self._probability_correction:
+                # C2: calculate weights
+                unscaled_visual_activations = self._gamma * y_raw_activation[:, t, :].squeeze()
+                weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
-        # C3: Calculate P_correction mask
-        should_be_corrected = torch.unsqueeze(
-            torch.rand(size=(p_react.shape[:-1]), device=self.device) < self._probability_correction, dim=-1
-        )
+                # C3: Calculate weighted memories
+                angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories, dim=-2)
+                angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories, dim=-2)
+                no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
 
-        # C4: Apply corrections
-        corrected_x_1, _ = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1))
-        corrected_x_1 = nn.functional.dropout(corrected_x_1, p=0.5)
-        x_1 = should_be_corrected * corrected_x_1 + ~should_be_corrected * x_1
-        corrected_x_2, _ = self._lstm_angular_velocity_and_speed_correction(
-            torch.concat([x_2, angular_velocity_and_speed_x_tilde], dim=-1)
-        )
-        corrected_x_2 = nn.functional.dropout(corrected_x_2, p=0.5)
-        x_2 = should_be_corrected * corrected_x_2 + ~should_be_corrected * x_2
-        corrected_x_3, _ = self._lstm_no_self_motion_correction(torch.concat([x_3, no_self_motion_x_tilde], dim=-1))
-        corrected_x_3 = nn.functional.dropout(corrected_x_3, p=0.5)
-        x_3 = should_be_corrected * corrected_x_3 + ~should_be_corrected * x_3
+                # C4: Apply corrections
+                x_1, h_1 = self._lstm_angular_velocity_correction(torch.concat([x_1, angular_velocity_x_tilde], dim=-1), (x_1, h_1))
+                out_1 = nn.functional.dropout(x_1, p=0.5)
+                
+                x_2, h_2 = self._lstm_angular_velocity_and_speed_correction(
+                    torch.concat([x_2, angular_velocity_and_speed_x_tilde], dim=-1),
+                    (x_2, h_2)
+                )
+                out_2 = nn.functional.dropout(x_2, p=0.5)
+                
+                x_3, h_3 = self._lstm_no_self_motion_correction(torch.concat([x_3, no_self_motion_x_tilde], dim=-1), (x_3, h_3))
+                out_3 = nn.functional.dropout(x_3, p=0.5)
+
+            xs_1[:, t, :] = out_1
+            xs_2[:, t, :] = out_2
+            xs_3[:, t, :] = out_3
 
         # D: Calculate the predictions of the RNNs
         # D1: Apply the memory storage mask
 
-        # D2: Calculate the predictions
+        # D2: Calculate the predictions # All ok?
         p_pred = (
-            self._calculate_activation(self._pi_angular_velocity, x_1, self._angular_velocity_memories)
+            self._calculate_activation(self._pi_angular_velocity, xs_1, self._angular_velocity_memories)
             * self._calculate_activation(
-                self._pi_angular_velocity_and_speed, x_2, self._angular_velocity_and_speed_memories
+                self._pi_angular_velocity_and_speed, xs_2, self._angular_velocity_and_speed_memories
             )
-            * self._calculate_activation(self._pi_no_self_motion, x_3, self._no_self_motion_memories)
+            * self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
         )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss
@@ -207,6 +216,12 @@ class SpatialMemoryPipeline(pl.LightningModule):
         elif p_react > self._entropy_reactivation_target:
             beta_logit -= 0.001
         self._beta = float(np.exp(beta_logit))
+
+    def fill_slot(self):
+        """
+        Chooses a memory slot at random and fills it with RNNs/VAE outputs
+        """
+        slot = np.random.choice(self._nb_memory_slots)
 
 
 def run_smp_experiment(config: DictConfig):

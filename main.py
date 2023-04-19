@@ -4,6 +4,7 @@ from omegaconf import DictConfig
 
 from smp import run_smp_experiment
 from vae import run_vae_experiment
+from rl import run_rl_experiment
 
 
 @hydra.main(config_path="config", config_name="config", version_base="1.1")
@@ -17,6 +18,8 @@ def main(config: DictConfig):
         run_vae_experiment(config)
     elif experiment_type == "smp":
         run_smp_experiment(config)
+    elif experiment_type == "rl":
+        run_rl_experiment(config)
     else:
         raise NotImplementedError(f"Experiment type {experiment_type} is unknown")
 

@@ -1,4 +1,4 @@
-experiment_type: "smp"  # ["vae", "smp"]
+experiment_type: "smp"  # ["vae", "smp", "rl"]
 
 hardware:
     use_gpu: True

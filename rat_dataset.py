@@ -20,23 +20,23 @@ from agents.walker import run_random_walk
 
 
 class RatDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, batch_size: int = 50, num_workers: int = 0, img_size: int = 64):
+    def __init__(self, data_dir: str, config: DictConfig, batch_size: int = 50, num_workers: int = 0, img_size: int = 64):
         super().__init__()
         self._data_dir = data_dir
+        self._config = config
         self._batch_size = batch_size
         self._num_workers = num_workers
         self._img_size = img_size
         self._img_dataset = None
 
     def prepare_data(self):
-        data_dir = Path(self._data_dir)
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-        if not any(data_dir.iterdir()):
-            run_random_walk(1200, 0, self._data_dir, traj_nb=1, img_size=self._img_size, save_traj=False)
+        original_cwd = hydra.utils.get_original_cwd()
+        data_dir = os.path.abspath(original_cwd + self._config.hardware.smp_dataset_folder_path)
+        if not Path(data_dir).exists():
+            generate_data.generate_data(self._config)
 
     def setup(self, stage: str):
-        self._img_dataset = ImageFolder(root=str(Path(self._data_dir).parent), transform=ToTensor())
+        self._img_dataset = ImageFolder(root=self._data_dir, transform=ToTensor())
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(

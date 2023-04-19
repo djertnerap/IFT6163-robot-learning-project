@@ -115,7 +115,8 @@ class LitAutoEncoder(pl.LightningModule):
 def run_vae_experiment(config: DictConfig):
     original_cwd = hydra.utils.get_original_cwd()
     rat_data_module = RatDataModule(
-        data_dir=os.path.abspath(original_cwd + config["hardware"]["dataset_folder_path"]),
+        data_dir=os.path.abspath(original_cwd + config["hardware"]["smp_dataset_folder_path"]),
+        config=config,
         batch_size=config["vae"]["train_batch_size"],
         num_workers=config["hardware"]["num_data_loader_workers"],
         img_size=config["env"]["img_size"],

@@ -17,10 +17,12 @@ from vae import LitAutoEncoder
 class SpatialMemoryPipeline(pl.LightningModule):
     def __init__(
         self,
+        batch_size: int,
         learning_rate: float,
         memory_slot_learning_rate: float,
         auto_encoder: LitAutoEncoder,
         entropy_reactivation_target: float,
+        memory_slot_size: int,
         hidden_size_RNN1: int,
         hidden_size_RNN2: int,
         hidden_size_RNN3: int,
@@ -30,12 +32,14 @@ class SpatialMemoryPipeline(pl.LightningModule):
         update_beta_every: int = 10,
     ):
         super().__init__()
+        self.batch_size = batch_size
         self._learning_rate = learning_rate
         self._memory_slot_learning_rate = memory_slot_learning_rate
         self._nb_memory_slots = nb_memory_slots
         self._probability_correction = probability_correction
         self._probability_storage = probability_storage
         self._update_beta_every = update_beta_every
+        self._memory_slot_size = memory_slot_size
         self._hidden_size_RNN1 = hidden_size_RNN1
         self._hidden_size_RNN2 = hidden_size_RNN2
         self._hidden_size_RNN3 = hidden_size_RNN3
@@ -111,18 +115,18 @@ class SpatialMemoryPipeline(pl.LightningModule):
         )
 
         # B: For loop
-        x_1, h_1 = torch.zeros(self._hidden_size_RNN1), torch.zeros(self._hidden_size_RNN1)
-        x_2, h_2 = torch.zeros(self._hidden_size_RNN2), torch.zeros(self._hidden_size_RNN2)
-        x_3, h_3 = torch.zeros(self._hidden_size_RNN3), torch.zeros(self._hidden_size_RNN3)
+        x_1, h_1 = torch.zeros((self.batch_size, self._hidden_size_RNN1), device=self.device), torch.zeros((self.batch_size, self._hidden_size_RNN1), device=self.device)
+        x_2, h_2 = torch.zeros((self.batch_size, self._hidden_size_RNN2), device=self.device), torch.zeros((self.batch_size, self._hidden_size_RNN2), device=self.device)
+        x_3, h_3 = torch.zeros((self.batch_size, self._hidden_size_RNN3), device=self.device), torch.zeros((self.batch_size, self._hidden_size_RNN3), device=self.device)
         
-        xs_1 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN1])
-        xs_2 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN2])
-        xs_3 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN3])
+        xs_1 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN1], device=self.device)
+        xs_2 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN2], device=self.device)
+        xs_3 = torch.zeros(size=list(velocities.shape[:2]) + [self._hidden_size_RNN3], device=self.device)
         
         for t in range(velocities.shape[1]):
             x_1, h_1 = self._lstm_angular_velocity(velocities[:, t, :2].squeeze(), (x_1, h_1))  # x: Batch X 1 X encoding dimension
             x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities[:, t, :].squeeze(), (x_2, h_2))
-            x_3, h_3 = self._lstm_no_self_motion(torch.ones(size=velocities.shape[0], device=self.device), (x_3, h_3)) # Do we need another dim?
+            x_3, h_3 = self._lstm_no_self_motion(torch.ones(size=(self.batch_size, 1), device=self.device), (x_3, h_3))  # Do we need another dim?
 
             out_1 = nn.functional.dropout(x_1, p=0.5)
             out_2 = nn.functional.dropout(x_2, p=0.5)
@@ -244,6 +248,7 @@ def run_smp_experiment(config: DictConfig):
     ae.freeze()
 
     smp = SpatialMemoryPipeline(
+        batch_size=config["smp"]["batch_size"],
         learning_rate=config["smp"]["learning_rate"],
         memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
         auto_encoder=ae,

@@ -89,6 +89,7 @@ rlsmp:
     sac_grad_norm_clipping: 10
     target_update_freq: 1
     polyak_avg: 0.99
+    sac_gamma: 0.99
 
 logging:
     seed: 1234

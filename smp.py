@@ -108,7 +108,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # A3: update beta
         if (batch_idx + 1) % self._update_beta_every == 0:  # This would be the correct way to do it
             # TODO: mean over batch and sequence dims
-            p_react_entropy = -torch.sum(p_react * torch.log(p_react))  # is always NaN
+            p_react_entropy = -torch.sum(p_react * torch.log(p_react+1e-43))  # is always NaN
             # if p_react_entropy.isnan() > 0:
             #     print("p_react_entropy is NaN")
             self.update_beta(p_react_entropy)
@@ -308,6 +308,7 @@ def run_smp_experiment(config: DictConfig):
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
+        accelerator=config["hardware"]['accelerator'],
         max_epochs=config["smp"]["max_epochs"],
         max_steps=config["smp"]["max_steps"],
         default_root_dir=original_cwd,

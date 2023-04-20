@@ -1,7 +1,7 @@
-experiment_type: "vae"  # ["vae", "smp", "rl"]
+experiment_type: "smp"  # ["vae", "smp", "rl"]
 
 hardware:
-    use_gpu: True
+    accelerator: 'cpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
     smp_dataset_folder_path: '/data'
@@ -87,4 +87,4 @@ rlsmp:
 logging:
     seed: 1234
     exp: traj
-    n_traj: 800
+    n_traj: 32

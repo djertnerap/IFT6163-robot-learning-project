@@ -1,7 +1,7 @@
 experiment_type: "smp"  # ["vae", "smp", "rl"]
 
 hardware:
-    accelerator: 'cpu' # ['cpu', 'gpu', 'tpu']
+    accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
     smp_dataset_folder_path: '/data'

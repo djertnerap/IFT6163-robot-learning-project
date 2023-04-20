@@ -1,6 +1,7 @@
 import inspect
 import random
 from functools import wraps
+from typing import Tuple
 
 import numpy as np
 
@@ -79,6 +80,7 @@ class MemoryOptimizedReplayBuffer(object):
         self.num_in_buffer = 0
 
         self.obs = None
+        self.obs_velocities = None
         self.action = None
         self.reward = None
         self.done = None
@@ -89,12 +91,15 @@ class MemoryOptimizedReplayBuffer(object):
 
     def _encode_sample(self, idxes):
         obs_batch = np.concatenate([self._encode_observation(idx)[None] for idx in idxes], 0)
+        obs_velocities_batch = np.concatenate(
+            [self._encode_specific_observation(idx, self.obs_velocities)[None] for idx in idxes], 0
+        )
         act_batch = self.action[idxes]
         rew_batch = self.reward[idxes]
         next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
         done_mask = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
 
-        return obs_batch, act_batch, rew_batch, next_obs_batch, done_mask
+        return (obs_batch, obs_velocities_batch), act_batch, rew_batch, next_obs_batch, done_mask
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -167,15 +172,55 @@ class MemoryOptimizedReplayBuffer(object):
             frames = [np.zeros_like(self.obs[0]) for _ in range(missing_context)]
             for idx in range(start_idx, end_idx):
                 frames.append(self.obs[idx % self._size])
+            # We want to use the history as BPTT, so we want a timestep dimension
             return np.array(frames)
+
+            # Deprecated concat of history
             # return np.concatenate(frames, 2)
         else:
+            # We want to use the history as BPTT, so we want a timestep dimension
             return self.obs[start_idx:end_idx]
+
+            # Deprecated concat of history
             # this optimization has potential to saves about 30% compute time \o/
             # img_h, img_w = self.obs.shape[1], self.obs.shape[2]
             # return self.obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
 
-    def store_frame(self, frame):
+    def _encode_specific_observation(self, idx: int, obs):
+        end_idx = idx + 1  # make noninclusive
+        start_idx = end_idx - self._frame_history_len
+        # this checks if we are using low-dimensional observations, such as RAM
+        # state, in which case we just directly return the latest RAM.
+        if len(obs.shape) == 2:
+            return obs[end_idx - 1]
+        # if there weren't enough frames ever in the buffer for context
+        if start_idx < 0 and self.num_in_buffer != self._size:
+            start_idx = 0
+        for idx in range(start_idx, end_idx - 1):
+            if self.done[idx % self._size]:
+                start_idx = idx + 1
+        missing_context = self._frame_history_len - (end_idx - start_idx)
+        # if zero padding is needed for missing context
+        # or we are on the boundry of the buffer
+        if start_idx < 0 or missing_context > 0:
+            frames = [np.zeros_like(obs[0]) for _ in range(missing_context)]
+            for idx in range(start_idx, end_idx):
+                frames.append(obs[idx % self._size])
+            # We want to use the history as BPTT, so we want a timestep dimension
+            return np.array(frames)
+
+            # Deprecated concat of history
+            # return np.concatenate(frames, 2)
+        else:
+            # We want to use the history as BPTT, so we want a timestep dimension
+            return obs[start_idx:end_idx]
+
+            # Deprecated concat of history
+            # this optimization has potential to saves about 30% compute time \o/
+            # img_h, img_w = self.obs.shape[1], self.obs.shape[2]
+            # return self.obs[start_idx:end_idx].transpose(1, 2, 0, 3).reshape(img_h, img_w, -1)
+
+    def store_frame(self, frame, velocities):
         """Store a single frame in the buffer at the next available index, overwriting
         old frames if necessary.
 
@@ -185,6 +230,9 @@ class MemoryOptimizedReplayBuffer(object):
             Array of shape (img_h, img_w, img_c) and dtype np.uint8
             the frame to be stored
 
+        velocities: np.ndarray
+            Array of shape (action_dim) to be stored
+
         Returns
         -------
         idx: int
@@ -192,6 +240,7 @@ class MemoryOptimizedReplayBuffer(object):
         """
         if self.obs is None:
             self.obs = np.empty([self._size] + list(frame.shape), dtype=np.float32 if self._lander else np.uint8)
+            self.obs_velocities = np.empty([self._size] + list(velocities.shape), dtype=np.float32)
             ## If discrete actions then just need a list of integers
             ## If continuous actions need a matrix to store action vector for each step
             self.action = np.empty(
@@ -201,6 +250,7 @@ class MemoryOptimizedReplayBuffer(object):
             self.reward = np.empty([self._size], dtype=np.float32)
             self.done = np.empty([self._size], dtype=np.bool_)
         self.obs[self.next_idx] = frame
+        self.obs_velocities[self.next_idx] = velocities
 
         ret = self.next_idx
         self.next_idx = (self.next_idx + 1) % self._size

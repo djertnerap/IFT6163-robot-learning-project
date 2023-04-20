@@ -21,6 +21,7 @@ from vae import LitAutoEncoder
 
 # TODO MENU
 # Done: Test the for loop with ratinabox env
+# TODO: Iterate over both images and velocities
 # TODO: Do the multi model multi optimizer trick
 # TODO: Carry over SAC or other RL into module & train with dummy linear layer SMP
 # TODO: Carry over SMP into this module
@@ -34,12 +35,14 @@ class DummyAgent:
         self.env = env
         self.replay_buffer = replay_buffer
         self.last_obs, _ = env.reset(seed=1)
+        self.last_velocities = np.zeros(2)
 
     def step_env(self):
-        replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs)
+        replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs, self.last_velocities)
 
         action = self.env.action_space.sample()
-        last_obs, reward, done, truncation, info = self.env.step(action)
+        self.last_velocities = action
+        self.last_obs, reward, done, truncation, info = self.env.step(action)
 
         self.replay_buffer.store_effect(idx=replay_buffer_idx, action=action, reward=reward, done=done)
 
@@ -50,9 +53,9 @@ class RLDataset(IterableDataset):
         self.sample_size = sample_size
 
     def __iter__(self) -> Iterator[Tuple]:
-        states, actions, rewards, new_states, dones = self._replay_buffer.sample(self.sample_size)
+        (visual_inputs, velocities), actions, rewards, new_states, dones = self._replay_buffer.sample(self.sample_size)
         for i in range(len(dones)):
-            yield states[i], actions[i], rewards[i], dones[i], new_states[i]
+            yield visual_inputs[i], velocities[i], actions[i], rewards[i], new_states[i], dones[i]
 
 
 class SACWithSpatialMemoryPipeline(pl.LightningModule):
@@ -83,6 +86,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
     def warm_start_replay_buffer(self, steps: int = 15):
         last_obs, _ = self.env.reset()
+        last_velocity = np.zeros(2)
 
         pos = self.env.agent.pos
         direction = self.env.agent.dir
@@ -91,8 +95,9 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         for t in tqdm(range(traj.shape[1]), desc=f"Warm start replay buffer"):
             # Slow movement speed to minimize resets
             action = traj[:, t]
-            replay_buffer_idx = self.replay_buffer.store_frame(last_obs)
+            replay_buffer_idx = self.replay_buffer.store_frame(last_obs, last_velocity)
 
+            last_velocity = action
             last_obs, reward, termination, truncation, info = self.env.step(action)
 
             self.replay_buffer.store_effect(replay_buffer_idx, action, reward, termination)
@@ -101,7 +106,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                 last_obs, _ = self.env.reset()
 
     def training_step(self, batch, batch_idx: int) -> STEP_OUTPUT:
-        obs, actions, reward, next_obs, done = batch
+        visual_obs, velocities, actions, reward, next_obs, done = batch
         self.dummy_agent.step_env()
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:

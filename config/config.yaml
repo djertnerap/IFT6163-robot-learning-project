@@ -1,11 +1,11 @@
-experiment_type: "vae"  # ["vae", "smp", "rl"]
+experiment_type: "rl"  # ["vae", "smp", "rl"]
 
 hardware:
     use_gpu: True
     which_gpu: 0
     matmul_precision: "high"
     smp_dataset_folder_path: '/data'
-    num_data_loader_workers: 8  # Set to you numbers of CPU cores for smp
+    num_data_loader_workers: 0  # Set to you numbers of CPU cores for smp
 
 env:
     img_size: 64

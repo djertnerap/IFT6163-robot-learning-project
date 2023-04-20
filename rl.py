@@ -21,8 +21,8 @@ from vae import LitAutoEncoder
 
 # TODO MENU
 # Done: Test the for loop with ratinabox env
-# TODO: Iterate over both images and velocities
-# TODO: Do the multi model multi optimizer trick
+# Done: Iterate over both images and velocities
+# Done: Do the multi model multi optimizer trick
 # TODO: Carry over SAC or other RL into module & train with dummy linear layer SMP
 # TODO: Carry over SMP into this module
 # TODO: Ensure that reward signal is good in the gym env for random target chosen at start of training
@@ -66,6 +66,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         self._bptt_unroll_len = bptt_unroll_len
 
         self.save_hyperparameters()
+        self.automatic_optimization = False
 
         self.env: OpenField = gym.make(
             "MiniWorld-OpenField-v1",
@@ -81,7 +82,8 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             size=1000, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=2
         )
         self.dummy_agent = DummyAgent(env=self.env, replay_buffer=self.replay_buffer)
-        self.dummy_critic = torch.nn.Linear(2, 3)
+        self.dummy_critic = torch.nn.Linear(2, 1)
+        self.dummy_smp = torch.nn.Linear(2, 1)
         self.warm_start_replay_buffer()
 
     def warm_start_replay_buffer(self, steps: int = 15):
@@ -109,6 +111,18 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         visual_obs, velocities, actions, reward, next_obs, done = batch
         self.dummy_agent.step_env()
 
+        smp_optimizer, sac_optimizer = self.optimizers()
+
+        smp_loss = torch.sum(1 - self.dummy_smp(velocities))
+        smp_optimizer.zero_grad()
+        self.manual_backward(smp_loss)
+        smp_optimizer.step()
+
+        sac_loss = torch.sum(1 - self.dummy_critic(velocities))
+        sac_optimizer.zero_grad()
+        self.manual_backward(sac_loss)
+        sac_optimizer.step()
+
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(
             dataset=RLDataset(
@@ -118,7 +132,10 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         )
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self._learning_rate)
+        return [
+            torch.optim.Adam(self.dummy_smp.parameters(), lr=self._learning_rate),
+            torch.optim.Adam(self.dummy_critic.parameters(), lr=self._learning_rate),
+        ]
 
 
 def run_rl_experiment(config: DictConfig) -> None:

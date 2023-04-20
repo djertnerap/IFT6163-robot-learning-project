@@ -34,7 +34,7 @@ vae:
 # Spatial Memory Pipeline (SMP) parameters
 smp:
     n_iter: 2 #200000
-    max_epochs: 4
+    max_epochs: 2
     max_steps: 200000
     entropy_reactivation_target: 0.5  # H_react
     beta: 1.0  # beta

@@ -20,7 +20,9 @@ from agents.walker import run_random_walk
 
 
 class RatDataModule(pl.LightningDataModule):
-    def __init__(self, data_dir: str, config: DictConfig, batch_size: int = 50, num_workers: int = 0, img_size: int = 64):
+    def __init__(
+        self, data_dir: str, config: DictConfig, batch_size: int = 50, num_workers: int = 0, img_size: int = 64
+    ):
         super().__init__()
         self._data_dir = data_dir
         self._config = config
@@ -135,11 +137,12 @@ class SequencedDataModule(RatDataModule):
         num_workers: int = 0,
         img_size: int = 64,
     ):
-        super().__init__(data_dir=data_dir, batch_size=batch_size, num_workers=num_workers, img_size=img_size)
+        super().__init__(
+            data_dir=data_dir, batch_size=batch_size, num_workers=num_workers, img_size=img_size, config=config
+        )
         self._sampler = None
         self._seq_dataset = None
         self._bptt_unroll_length = bptt_unroll_length
-        self._config = config
         self.seq_length = config.smp.bptt_unroll_length
 
     def setup(self, stage):

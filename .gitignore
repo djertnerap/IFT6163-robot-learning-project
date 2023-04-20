@@ -142,3 +142,4 @@ data/
 test.ipynb
 checkpoints/
 .vscode/tasks.json
+train.sh

@@ -1,5 +1,5 @@
 import os
-from typing import Iterator, List, Tuple
+from typing import Iterator, Tuple
 
 import gymnasium as gym
 import hydra
@@ -9,21 +9,20 @@ from lightning import pytorch as pl
 from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT, TRAIN_DATALOADERS
 from omegaconf import DictConfig
-from torch.optim import Optimizer
+from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
 from tqdm import tqdm
 
 from environ import OpenField
-from memory_optimized_replay_buffer import MemoryOptimizedReplayBuffer
-from rat_dataset import SequencedDataModule
+from roble.infrastructure.memory_optimized_replay_buffer import MemoryOptimizedReplayBuffer
+from roble.policies.MLP_policy import ConcatMLP, MLPPolicyStochastic
 from utils.trajectory import generate_traj
-from vae import LitAutoEncoder
 
 # TODO MENU
 # Done: Test the for loop with ratinabox env
 # Done: Iterate over both images and velocities
 # Done: Do the multi model multi optimizer trick
-# TODO: Carry over SAC or other RL into module & train with dummy linear layer SMP
+# Done: Carry over SAC or other RL into module & train with dummy linear layer SMP
 # TODO: Carry over SMP into this module
 # TODO: Ensure that reward signal is good in the gym env for random target chosen at start of training
 # TODO: Enable video generation from validation trajectories
@@ -59,12 +58,23 @@ class RLDataset(IterableDataset):
 
 
 class SACWithSpatialMemoryPipeline(pl.LightningModule):
-    def __init__(self, img_size: int, batch_size: int, learning_rate: float, bptt_unroll_len: int):
+    def __init__(
+        self,
+        img_size: int,
+        batch_size: int,
+        learning_rate: float,
+        bptt_unroll_len: int,
+        sac_entropy_coeff: float,
+        hidden_size_RNN1: int,
+        hidden_size_RNN2: int,
+        hidden_size_RNN3: int,
+        policy_n_layers: int,
+        policy_net_size: int,
+        sac_gradient_clipping: float,
+        target_update_freq: int,
+        polyak_avg: float,
+    ):
         super().__init__()
-        self._batch_size = batch_size
-        self._learning_rate = learning_rate
-        self._bptt_unroll_len = bptt_unroll_len
-
         self.save_hyperparameters()
         self.automatic_optimization = False
 
@@ -77,14 +87,49 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             window_width=img_size,
             window_height=img_size,
         )
+        action_dim = 2
 
         self.replay_buffer = MemoryOptimizedReplayBuffer(
-            size=1000, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=2
+            size=1000, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=action_dim
         )
         self.dummy_agent = DummyAgent(env=self.env, replay_buffer=self.replay_buffer)
         self.dummy_critic = torch.nn.Linear(2, 1)
         self.dummy_smp = torch.nn.Linear(2, 1)
         self.warm_start_replay_buffer()
+
+        # previous t-step reward, previous action, SMP output, SMP output when last reached goal
+        observation_dim = 1 + 2 + 2 * (hidden_size_RNN1 + hidden_size_RNN2 + hidden_size_RNN3)
+        self.actor = MLPPolicyStochastic(
+            entropy_coeff=sac_entropy_coeff,
+            ac_dim=action_dim,
+            ob_dim=observation_dim,
+            n_layers=policy_n_layers,
+            size=policy_net_size,
+        )
+        self.q_net = ConcatMLP(
+            ac_dim=1,
+            ob_dim=observation_dim + action_dim,
+            n_layers=policy_n_layers,
+            size=policy_net_size,
+        )
+        self.q_net2 = ConcatMLP(
+            ac_dim=1,
+            ob_dim=observation_dim + action_dim,
+            n_layers=policy_n_layers,
+            size=policy_net_size,
+        )
+        self.q_net_target = ConcatMLP(
+            ac_dim=1,
+            ob_dim=observation_dim + action_dim,
+            n_layers=policy_n_layers,
+            size=policy_net_size,
+        )
+        self.q_net_target2 = ConcatMLP(
+            ac_dim=1,
+            ob_dim=observation_dim + action_dim,
+            n_layers=policy_n_layers,
+            size=policy_net_size,
+        )
 
     def warm_start_replay_buffer(self, steps: int = 15):
         last_obs, _ = self.env.reset()
@@ -109,32 +154,110 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
     def training_step(self, batch, batch_idx: int) -> STEP_OUTPUT:
         visual_obs, velocities, actions, reward, next_obs, done = batch
+
         self.dummy_agent.step_env()
 
-        smp_optimizer, sac_optimizer = self.optimizers()
+        smp_predictions, next_smp_predictions = self._perform_smp_training_step(batch, batch_idx)
+        self._sac_training_step(smp_predictions, next_smp_predictions, actions, reward, done, batch_idx)
+
+    def _perform_smp_training_step(self, batch, batch_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        smp_optimizer, _ = self.optimizers()
+        visual_obs, velocities, actions, reward, next_obs, done = batch
 
         smp_loss = torch.sum(1 - self.dummy_smp(velocities))
+
         smp_optimizer.zero_grad()
         self.manual_backward(smp_loss)
         smp_optimizer.step()
 
-        sac_loss = torch.sum(1 - self.dummy_critic(velocities))
-        sac_optimizer.zero_grad()
-        self.manual_backward(sac_loss)
-        sac_optimizer.step()
+    def _sac_training_step(self, observation, next_observation, actions, rewards, terminal, batch_idx):
+        # Critic Update
+        self._train_critic(observation, next_observation, actions, rewards, terminal)
+        # Actor Update
+        self._train_actor(observation)
+
+        if batch_idx % self.hparams.target_update_freq == 0:
+            self._update_target_network()
+
+    def _train_critic(self, observation, next_observation, actions, rewards, terminal):
+        _, _, q_net_optimizer, q_net2_optimizer = self.optimizers()
+
+        qa_t_values = self.q_net(observation, actions)
+        q_t_values = torch.squeeze(qa_t_values)
+
+        qa_t_values2 = self.q_net2(observation, actions)
+        q_t_values2 = torch.squeeze(qa_t_values2)
+
+        action_distribution = self.actor(next_observation)
+        target_actions = action_distribution.rsample()
+        qa_tp1_values1 = self.q_net_target(next_observation, target_actions)
+        qa_tp1_values2 = self.q_net_target2(next_observation, target_actions)
+        qa_tp1_values = torch.squeeze(torch.minimum(qa_tp1_values1, qa_tp1_values2))
+
+        qa_tp1_values_reg = qa_tp1_values - (self.sac_entropy_coeff * action_distribution.log_prob(target_actions))
+
+        target = rewards + self.gamma * qa_tp1_values_reg * (1 - terminal)
+        target = target.detach()
+
+        loss = self.loss(q_t_values, target)
+        self.log("Q_net1_loss", loss)
+        q_net_optimizer.zero_grad()
+        self.manual_backward(loss)
+        self.clip_gradients(
+            q_net_optimizer, gradient_clip_val=self.hparams.sac_gradient_clipping, gradient_clip_algorithm="norm"
+        )
+        q_net_optimizer.step()
+
+        loss2 = self.loss(q_t_values2, target)
+        self.log("Q_net2_loss", loss)
+        q_net2_optimizer.zero_grad()
+        self.manual_backward(loss2)
+        self.clip_gradients(
+            q_net2_optimizer, gradient_clip_val=self.hparams.sac_gradient_clipping, gradient_clip_algorithm="norm"
+        )
+        q_net2_optimizer.step()
+
+    def _train_actor(self, observation):
+        _, actor_optimizer, _, _ = self.optimizers()
+
+        action_distribution = self.actor.forward(observation)
+        actions = action_distribution.rsample()
+        q_values1 = self.q_net(observation, actions)
+        q_values2 = self.q_net2(observation, actions)
+        loss = torch.mean(
+            -(
+                torch.squeeze(torch.minimum(q_values1, q_values2))
+                - self.entropy_coeff * action_distribution.log_prob(actions)
+            )
+        )
+        self.log("Actor_loss", loss)
+        actor_optimizer.zero_grad()
+        self.manual_backward(loss)
+        actor_optimizer.step()
+
+    def _update_target_network(self):
+        self._apply_polyak_avg(self.q_net_target, self.q_net)
+        self._apply_polyak_avg(self.q_net_target2, self.q_net2)
+
+    def _apply_polyak_avg(self, target_net_params: nn.Module, net_params: nn.Module):
+        for target_param, param in zip(target_net_params.parameters(), net_params.parameters()):
+            ## Perform Polyak averaging
+            target_param.data.copy_(self.hparams.polyak_avg * target_param + (1 - self.hparams.polyak_avg) * param)
 
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(
             dataset=RLDataset(
-                self.replay_buffer, sample_size=self._batch_size
+                self.replay_buffer, sample_size=self.hparams.batch_size
             ),  # This does not have to be batch_size to allow bigger epochs
-            batch_size=self._batch_size,
+            batch_size=self.hparams.batch_size,
         )
 
     def configure_optimizers(self):
         return [
-            torch.optim.Adam(self.dummy_smp.parameters(), lr=self._learning_rate),
-            torch.optim.Adam(self.dummy_critic.parameters(), lr=self._learning_rate),
+            torch.optim.Adam(self.dummy_smp.parameters(), lr=self.hparams.learning_rate),  # SMP
+            torch.optim.Adam(self.actor.parameters(), lr=self.hparams.learning_rate),
+            torch.optim.Adam(self.q_net.parameters(), lr=self.hparams.learning_rate),
+            torch.optim.Adam(self.q_net2.parameters(), lr=self.hparams.learning_rate),
         ]
 
 
@@ -147,6 +270,15 @@ def run_rl_experiment(config: DictConfig) -> None:
         batch_size=config["rlsmp"]["batch_size"],
         learning_rate=config["rlsmp"]["learning_rate"],
         bptt_unroll_len=config["rlsmp"]["bptt_unroll_length"],
+        sac_entropy_coeff=config["rlsmp"]["sac_entropy_coeff"],
+        hidden_size_RNN1=config["rlsmp"]["hidden_size_RNN1"],
+        hidden_size_RNN2=config["rlsmp"]["hidden_size_RNN2"],
+        hidden_size_RNN3=config["rlsmp"]["hidden_size_RNN3"],
+        policy_n_layers=config["rlsmp"]["policy_n_layers"],
+        policy_net_size=config["rlsmp"]["policy_net_size"],
+        sac_gradient_clipping=config["rlsmp"]["sac_grad_norm_clipping"],
+        target_update_freq=config["rlsmp"]["target_update_freq"],
+        polyak_avg=config["rlsmp"]["polyak_avg"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

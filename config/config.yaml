@@ -1,4 +1,4 @@
-experiment_type: "smp"  # ["vae", "smp", "rl"]
+experiment_type: "rl"  # ["vae", "smp", "rl"]
 
 hardware:
     use_gpu: True
@@ -73,10 +73,10 @@ rlsmp:
     prob_storage: 0.0001  # P_storage
     nb_memory_slots: 1024  # S
     episode_len: 25
-    bptt_unroll_length: 50
-    batch_size: 32
-    memory_slot_learning_rate: 0.01
-    learning_rate: 0.003
+    bptt_unroll_length: 2
+    batch_size: 3
+    memory_slot_learning_rate: 0.003
+    learning_rate: 0.001
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2

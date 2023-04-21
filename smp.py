@@ -76,9 +76,15 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._gamma = nn.Parameter(torch.rand((1,)))
 
         self._last_y_enc = None
-        self._last_x_1 = torch.zeros(size=[batch_size, self._sequence_length, self._hidden_size_RNN1], device=self.device)
-        self._last_x_2 = torch.zeros(size=[batch_size, self._sequence_length, self._hidden_size_RNN2], device=self.device)
-        self._last_x_3 = torch.zeros(size=[batch_size, self._sequence_length, self._hidden_size_RNN3], device=self.device)
+        self._last_x_1 = torch.zeros(
+            size=[batch_size, self._sequence_length, self._hidden_size_RNN1], device=self.device
+        )
+        self._last_x_2 = torch.zeros(
+            size=[batch_size, self._sequence_length, self._hidden_size_RNN2], device=self.device
+        )
+        self._last_x_3 = torch.zeros(
+            size=[batch_size, self._sequence_length, self._hidden_size_RNN3], device=self.device
+        )
 
     # @staticmethod
     # def _batch_vector_dot(v1: torch.Tensor, v2: torch.Tensor) -> torch.Tensor:
@@ -107,7 +113,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         p_react = self._calculate_activation(self._beta, y_enc, self._visual_memories)
 
         # A3: update beta
-        p_react_entropy = -torch.sum(p_react * torch.log(p_react+1e-43), dim=-1).mean()
+        p_react_entropy = -torch.sum(p_react * torch.log(p_react + 1e-43), dim=-1).mean()
         self.update_beta(p_react_entropy)
 
         # A4: Prepare data
@@ -117,8 +123,8 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 10
                 * torch.concat(
                     [
-                        torch.unsqueeze(torch.cos_(angular_velocity), dim=-1),
-                        torch.unsqueeze(torch.sin_(angular_velocity), dim=-1),
+                        torch.unsqueeze(torch.cos(angular_velocity), dim=-1),
+                        torch.unsqueeze(torch.sin(angular_velocity), dim=-1),
                     ],
                     dim=-1,
                 ),
@@ -149,9 +155,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 velocities[:, t, :2].squeeze(), (x_1, h_1)
             )  # x: Batch X 1 X encoding dimension
             x_2, h_2 = self._lstm_angular_velocity_and_speed(velocities[:, t, :].squeeze(), (x_2, h_2))
-            x_3, h_3 = self._lstm_no_self_motion(
-                torch.ones(size=(self.batch_size, 1), device=self.device), (x_3, h_3)
-            )
+            x_3, h_3 = self._lstm_no_self_motion(torch.ones(size=(self.batch_size, 1), device=self.device), (x_3, h_3))
 
             out_1 = nn.functional.dropout(x_1, p=0.5)
             out_2 = nn.functional.dropout(x_2, p=0.5)
@@ -200,7 +204,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 self._pi_angular_velocity_and_speed, xs_2, self._angular_velocity_and_speed_memories
             )
             * self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
-        )**(1/3)  # Batch X Sequence length X nb of slots
+        ) ** (
+            1 / 3
+        )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss
         loss = nn.functional.cross_entropy(torch.flatten(p_pred, end_dim=1), torch.flatten(p_react, end_dim=1))
@@ -306,7 +312,7 @@ def run_smp_experiment(config: DictConfig):
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        accelerator=config["hardware"]['accelerator'],
+        accelerator=config["hardware"]["accelerator"],
         max_epochs=config["smp"]["max_epochs"],
         max_steps=config["smp"]["max_steps"],
         default_root_dir=original_cwd,

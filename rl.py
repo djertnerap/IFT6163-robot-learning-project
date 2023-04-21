@@ -1,5 +1,5 @@
 import os
-from typing import Iterator, Tuple, Union
+from typing import Callable, Iterator, Tuple, Union
 
 import gymnasium as gym
 import hydra
@@ -41,10 +41,11 @@ class DummyAgent:
         self.last_obs, _ = env.reset(seed=1)
         self.last_velocities = np.zeros(2)
 
-    def step_env(self):
+    def step_env(self, smp_fn: Callable, policy: MLPPolicyStochastic):
         replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs, self.last_velocities)
 
-        action = self.env.action_space.sample()
+        smp_fn()
+        action = policy.get_action()
         self.last_velocities = action
         self.last_obs, reward, done, truncation, info = self.env.step(action)
 
@@ -117,10 +118,22 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         self.replay_buffer = MemoryOptimizedReplayBuffer(
             size=1000, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=action_dim
         )
-        self.dummy_agent = DummyAgent(env=self.env, replay_buffer=self.replay_buffer)
-        self.dummy_critic = torch.nn.Linear(2, 1)
-        self.dummy_smp = torch.nn.Linear(2, 1)
+
         self.warm_start_replay_buffer()
+
+        # Live loop parameters
+        self.last_obs, _ = self.env.reset(seed=1)
+        self.last_velocities = np.zeros(2)
+
+        self.x_1, self.h_1 = torch.zeros((hidden_size_RNN1,), device="cuda"), torch.zeros(
+            (hidden_size_RNN1,), device="cuda"
+        )
+        self.x_2, self.h_2 = torch.zeros((hidden_size_RNN2,), device="cuda"), torch.zeros(
+            (hidden_size_RNN2,), device="cuda"
+        )
+        self.x_3, self.h_3 = torch.zeros((hidden_size_RNN3,), device="cuda"), torch.zeros(
+            (hidden_size_RNN3,), device="cuda"
+        )
 
         # SAC models
         # previous t-step reward, previous action, SMP output, SMP output when last reached goal
@@ -165,7 +178,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         )
         self.q_net_loss = nn.SmoothL1Loss()
 
-        self._last_success_smp_output = torch.zeros(size=(1, nb_memory_slots), device="cuda")
+        self._last_success_smp_output = torch.zeros(size=(nb_memory_slots,), device="cuda")
 
         # SMP models
         self._lstm_angular_velocity = nn.LSTMCell(input_size=2, hidden_size=hidden_size_RNN1)
@@ -249,21 +262,81 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         visual_obs, velocities, actions, reward, next_visual_obs, next_velocities, done = batch
 
         # Generate data with current policy
-        self.dummy_agent.step_env()
+        self._take_env_step()
 
         # Train SMP
         self._perform_smp_training_step(batch, batch_idx)
 
         # Train SAC agent
+        last_success_smp_output = torch.unsqueeze(self._last_success_smp_output, dim=0).expand(
+            self.hparams.batch_size, -1
+        )
         smp_predictions = torch.squeeze(
             self._smp_prediction(visual_obs, velocities)[:, -1, :]
         )  # Take most up-to-date prediction
-        obs = torch.concat([smp_predictions, self._last_success_smp_output.expand(self.hparams.batch_size, -1)], dim=1)
+        obs = torch.concat([smp_predictions, last_success_smp_output], dim=1)
         next_smp_predictions = torch.squeeze(self._smp_prediction(next_visual_obs, next_velocities)[:, -1, :])
-        next_obs = torch.concat(
-            [next_smp_predictions, self._last_success_smp_output.expand(self.hparams.batch_size, -1)], dim=1
-        )
+        next_obs = torch.concat([next_smp_predictions, last_success_smp_output], dim=1)
         self._sac_training_step(obs, next_obs, actions, reward, done, batch_idx)
+
+    def _take_env_step(self):
+        replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs, self.last_velocities)
+
+        # SMP prediction
+        last_obs = torch.from_numpy(self.last_obs).float().to(self.device)
+        visual_input = torch.unsqueeze(torch.permute(last_obs, dims=(2, 0, 1)), dim=0)
+        y_enc = self._auto_encoder.encode(visual_input)
+        y_raw_activation = self._batch_vector_dot(y_enc, self._visual_memories)
+
+        last_velocities = torch.from_numpy(self.last_velocities).float().to(self.device)
+        velocities = torch.squeeze(
+            self._prepare_velocities(torch.unsqueeze(torch.unsqueeze(last_velocities, dim=0), dim=0))
+        )
+
+        self.x_1, self.h_1 = self._lstm_angular_velocity(
+            velocities[:2], (self.x_1, self.h_1)
+        )  # x: Batch X 1 X encoding dimension
+        self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed(velocities, (self.x_2, self.h_2))
+        self.x_3, self.h_3 = self._lstm_no_self_motion(torch.ones(size=(1,), device=self.device), (self.x_3, self.h_3))
+
+        # Correction step
+        # C1: Decide if the correction is happening
+        if np.random.random() < self.hparams.probability_correction:
+            # C2: calculate weights
+            unscaled_visual_activations = self._gamma * y_raw_activation
+            weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
+
+            # C3: Calculate weighted memories
+            angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories, dim=-2)
+            angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories, dim=-2)
+            no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories, dim=-2)
+
+            # C4: Apply corrections
+            self.x_1, self.h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (self.x_1, self.h_1))
+            self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed_correction(
+                angular_velocity_and_speed_x_tilde, (self.x_2, self.h_2)
+            )
+            self.x_3, self.h_3 = self._lstm_no_self_motion_correction(no_self_motion_x_tilde, (self.x_3, self.h_3))
+
+        # D: Calculate the predictions of the RNNs
+        p_pred = (
+            self._calculate_activation(self._pi_angular_velocity, self.x_1, self._angular_velocity_memories)
+            * self._calculate_activation(
+                self._pi_angular_velocity_and_speed, self.x_2, self._angular_velocity_and_speed_memories
+            )
+            * self._calculate_activation(self._pi_no_self_motion, self.x_3, self._no_self_motion_memories)
+        )
+
+        policy_input = torch.concat([p_pred, self._last_success_smp_output])
+
+        action = torch.squeeze(self.actor.get_action(torch.unsqueeze(policy_input, dim=0)))
+        self.last_velocities = action.cpu().detach().numpy()
+        self.last_obs, reward, done, truncation, info = self.env.step(self.last_velocities)
+
+        if reward:
+            self._last_success_smp_output = p_pred
+
+        self.replay_buffer.store_effect(idx=replay_buffer_idx, action=self.last_velocities, reward=reward, done=done)
 
     def _perform_smp_training_step(self, batch, batch_idx: int):
         visual_input, velocities, _, _, _, _, _ = batch
@@ -326,8 +399,8 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                 10
                 * torch.concat(
                     [
-                        torch.unsqueeze(torch.cos_(angular_velocity), dim=-1),
-                        torch.unsqueeze(torch.sin_(angular_velocity), dim=-1),
+                        torch.unsqueeze(torch.cos(angular_velocity), dim=-1),
+                        torch.unsqueeze(torch.sin(angular_velocity), dim=-1),
                     ],
                     dim=-1,
                 ),

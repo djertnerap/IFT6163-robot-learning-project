@@ -198,8 +198,8 @@ class SpatialMemoryPipeline(pl.LightningModule):
             + self._calculate_activation(
                 self._pi_angular_velocity_and_speed, xs_2, self._angular_velocity_and_speed_memories
             )
-            * self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
-        )**(1/3)  # Batch X Sequence length X nb of slots
+            + self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
+        )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss
         loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()
@@ -287,22 +287,42 @@ def run_smp_experiment(config: DictConfig):
     ae.eval()
     ae.freeze()
 
-    smp = SpatialMemoryPipeline(
-        batch_size=config["smp"]["batch_size"],
-        learning_rate=config["smp"]["learning_rate"],
-        memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
-        auto_encoder=ae,
-        beta=config["smp"]["beta"],
-        entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
-        memory_slot_size=config["vae"]["latent_dim"],
-        nb_memory_slots=config["smp"]["nb_memory_slots"],
-        probability_correction=config["smp"]["prob_correction"],
-        probability_storage=config["smp"]["prob_storage"],
-        hidden_size_RNN1=config["smp"]["hidden_size_RNN1"],
-        hidden_size_RNN2=config["smp"]["hidden_size_RNN2"],
-        hidden_size_RNN3=config["smp"]["hidden_size_RNN3"],
-        sequence_length=config["smp"]["bptt_unroll_length"],
-    )
+    if config["smp"]["saved_model_path"]:
+        checkpoint_path = os.path.abspath(original_cwd + config["smp"]["saved_model_path"])
+        smp = SpatialMemoryPipeline.load_from_checkpoint(
+            checkpoint_path,
+            batch_size=config["smp"]["batch_size"],
+            learning_rate=config["smp"]["learning_rate"],
+            memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
+            auto_encoder=ae,
+            beta=config["smp"]["beta"],
+            entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
+            memory_slot_size=config["vae"]["latent_dim"],
+            nb_memory_slots=config["smp"]["nb_memory_slots"],
+            probability_correction=config["smp"]["prob_correction"],
+            probability_storage=config["smp"]["prob_storage"],
+            hidden_size_RNN1=config["smp"]["hidden_size_RNN1"],
+            hidden_size_RNN2=config["smp"]["hidden_size_RNN2"],
+            hidden_size_RNN3=config["smp"]["hidden_size_RNN3"],
+            sequence_length=config["smp"]["bptt_unroll_length"],
+        )
+    else:
+        smp = SpatialMemoryPipeline(
+            batch_size=config["smp"]["batch_size"],
+            learning_rate=config["smp"]["learning_rate"],
+            memory_slot_learning_rate=config["smp"]["memory_slot_learning_rate"],
+            auto_encoder=ae,
+            beta=config["smp"]["beta"],
+            entropy_reactivation_target=config["smp"]["entropy_reactivation_target"],
+            memory_slot_size=config["vae"]["latent_dim"],
+            nb_memory_slots=config["smp"]["nb_memory_slots"],
+            probability_correction=config["smp"]["prob_correction"],
+            probability_storage=config["smp"]["prob_storage"],
+            hidden_size_RNN1=config["smp"]["hidden_size_RNN1"],
+            hidden_size_RNN2=config["smp"]["hidden_size_RNN2"],
+            hidden_size_RNN3=config["smp"]["hidden_size_RNN3"],
+            sequence_length=config["smp"]["bptt_unroll_length"],
+        )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(

@@ -27,29 +27,11 @@ from vae import LitAutoEncoder
 # Done: Carry over SMP into this module
 # Done: Edit Replay buffer to have observations at t+1 for velocities
 # Done: Calculate the SMP output for the current and future batch as the input to the RL train batch
-# TODO: ensure that we are using the policy's actions to generate data
+# Done: ensure that we are using the policy's actions to generate data
 # TODO: Test the training loop
 # TODO: Ensure that reward signal is good in the gym env for random target chosen at start of training
 # TODO: Enable video generation from validation trajectories
 # TODO: Reference homework code
-
-
-class DummyAgent:
-    def __init__(self, env: gym.Env, replay_buffer: MemoryOptimizedReplayBuffer):
-        self.env = env
-        self.replay_buffer = replay_buffer
-        self.last_obs, _ = env.reset(seed=1)
-        self.last_velocities = np.zeros(2)
-
-    def step_env(self, smp_fn: Callable, policy: MLPPolicyStochastic):
-        replay_buffer_idx = self.replay_buffer.store_frame(self.last_obs, self.last_velocities)
-
-        smp_fn()
-        action = policy.get_action()
-        self.last_velocities = action
-        self.last_obs, reward, done, truncation, info = self.env.step(action)
-
-        self.replay_buffer.store_effect(idx=replay_buffer_idx, action=action, reward=reward, done=done)
 
 
 class RLDataset(IterableDataset):
@@ -66,9 +48,9 @@ class RLDataset(IterableDataset):
             dones,
         ) = self._replay_buffer.sample(self.sample_size)
         for i in range(len(dones)):
-            yield visual_inputs[i], velocities[i], actions[i], rewards[i], new_visual_inputs[i], new_velocities[
+            yield visual_inputs[i].astype(np.float32), velocities[i], actions[i], rewards[i], new_visual_inputs[
                 i
-            ], dones[i]
+            ].astype(np.float32), new_velocities[i], dones[i]
 
 
 class SACWithSpatialMemoryPipeline(pl.LightningModule):
@@ -99,6 +81,8 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         nb_memory_slots: int,
         probability_correction: float,
         probability_storage: float,
+        replay_buffer_size: int,
+        max_steps: int,
     ):
         super().__init__()
         self.save_hyperparameters(ignore=["auto_encoder"])
@@ -116,10 +100,10 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         action_dim = 2
 
         self.replay_buffer = MemoryOptimizedReplayBuffer(
-            size=1000, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=action_dim
+            size=replay_buffer_size, frame_history_len=bptt_unroll_len, continuous_actions=True, ac_dim=action_dim
         )
 
-        self.warm_start_replay_buffer()
+        self.warm_start_replay_buffer(batch_size * bptt_unroll_len + batch_size)
 
         # Live loop parameters
         self.last_obs, _ = self.env.reset(seed=1)
@@ -565,7 +549,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
     def train_dataloader(self) -> TRAIN_DATALOADERS:
         return DataLoader(
             dataset=RLDataset(
-                self.replay_buffer, sample_size=self.hparams.batch_size
+                self.replay_buffer, sample_size=self.hparams.batch_size * self.hparams.bptt_unroll_len
             ),  # This does not have to be batch_size to allow bigger epochs
             batch_size=self.hparams.batch_size,
         )
@@ -628,11 +612,14 @@ def run_rl_experiment(config: DictConfig) -> None:
         nb_memory_slots=config["rlsmp"]["nb_memory_slots"],
         probability_correction=config["rlsmp"]["prob_correction"],
         probability_storage=config["rlsmp"]["prob_storage"],
+        replay_buffer_size=config["rlsmp"]["replay_buffer_size"],
+        max_steps=config["rlsmp"]["max_steps"],
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        max_epochs=5,
+        # max_epochs=5,
+        max_steps=config["rlsmp"]["max_steps"],
         default_root_dir=original_cwd,
         logger=tb_logger,
         log_every_n_steps=1,

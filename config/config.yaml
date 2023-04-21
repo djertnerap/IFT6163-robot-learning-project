@@ -3,7 +3,7 @@ experiment_type: "rl"  # ["vae", "smp", "rl"]
 hardware:
     accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
-    matmul_precision: "high"
+    matmul_precision: "medium"
     smp_dataset_folder_path: '/data'
     num_data_loader_workers: 0  # Set to you numbers of CPU cores for smp
 
@@ -72,9 +72,9 @@ rlsmp:
     prob_storage: 0.0001  # P_storage
     nb_memory_slots: 1024  # S
     episode_len: 25
-    bptt_unroll_length: 2
+    bptt_unroll_length: 100
     beta: 1.0  # beta
-    batch_size: 3
+    batch_size: 64
     memory_slot_learning_rate: 0.003
     learning_rate: 0.001
     rnn_dropout: 0.5
@@ -91,6 +91,7 @@ rlsmp:
     target_update_freq: 1
     polyak_avg: 0.99
     sac_gamma: 0.99
+    replay_buffer_size: 1000000
 
 logging:
     seed: 1234

@@ -219,8 +219,8 @@ class MemoryOptimizedReplayBuffer(object):
         """
         if self.obs is None:
             self.obs = np.empty(
-                [self._size] + list(frame.shape), dtype=np.float32
-            )  # dtype=np.float32 if self._lander else np.uint8)
+                [self._size] + list(frame.shape), dtype=np.uint8
+            )  # dtype=np.float32 if self._lander else )
             self.obs_velocities = np.empty([self._size] + list(velocities.shape), dtype=np.float32)
             ## If discrete actions then just need a list of integers
             ## If continuous actions need a matrix to store action vector for each step

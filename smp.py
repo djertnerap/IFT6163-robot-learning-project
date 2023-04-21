@@ -198,7 +198,8 @@ class SpatialMemoryPipeline(pl.LightningModule):
             + self._calculate_activation(
                 self._pi_angular_velocity_and_speed, xs_2, self._angular_velocity_and_speed_memories
             )
-            + self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
+            + self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories),
+            dim=-1
         )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss

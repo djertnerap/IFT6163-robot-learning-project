@@ -73,6 +73,7 @@ rlsmp:
     nb_memory_slots: 1024  # S
     episode_len: 25
     bptt_unroll_length: 2
+    beta: 1.0  # beta
     batch_size: 3
     memory_slot_learning_rate: 0.003
     learning_rate: 0.001

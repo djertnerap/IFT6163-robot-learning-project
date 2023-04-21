@@ -23,7 +23,10 @@ class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
             self._logstd = nn.Parameter(torch.zeros(self._ac_dim, dtype=torch.float32))
 
     def parameters(self, recurse: bool = True) -> Iterator[Parameter]:
-        return itertools.chain([self._logstd], self._mean_net.parameters())
+        if self._deterministic:
+            return self._mean_net.parameters()
+        else:
+            return itertools.chain([self._logstd], self._mean_net.parameters())
 
     ##################################
 
@@ -42,12 +45,15 @@ class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
     # return more flexible objects, such as a
     # `torch.distributions.Distribution` object. It's up to you!
     def forward(self, observation: torch.FloatTensor):
-        batch_mean = self._mean_net(observation)
-        scale_tril = torch.diag(torch.exp(self._logstd))
-        batch_dim = batch_mean.shape[0]
-        batch_scale_tril = scale_tril.repeat(batch_dim, 1, 1)
-        action_distribution = distributions.MultivariateNormal(batch_mean, scale_tril=batch_scale_tril)
-        return action_distribution
+        if self._deterministic:
+            return self._mean_net(observation)
+        else:
+            batch_mean = self._mean_net(observation)
+            scale_tril = torch.diag(torch.exp(self._logstd))
+            batch_dim = batch_mean.shape[0]
+            batch_scale_tril = scale_tril.repeat(batch_dim, 1, 1)
+            action_distribution = distributions.MultivariateNormal(batch_mean, scale_tril=batch_scale_tril)
+            return action_distribution
 
 
 class ConcatMLP(MLPPolicy):

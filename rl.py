@@ -25,8 +25,8 @@ from vae import LitAutoEncoder
 # Done: Do the multi model multi optimizer trick
 # Done: Carry over SAC or other RL into module & train with dummy linear layer SMP
 # Done: Carry over SMP into this module
-# TODO: Edit Replay buffer to have observations at t+1 for velocities
-# TODO: Calculate the SMP output for the current and future batch as the input to the RL train batch
+# Done: Edit Replay buffer to have observations at t+1 for velocities
+# Done: Calculate the SMP output for the current and future batch as the input to the RL train batch
 # TODO: ensure that we are using the policy's actions to generate data
 # TODO: Test the training loop
 # TODO: Ensure that reward signal is good in the gym env for random target chosen at start of training
@@ -57,9 +57,17 @@ class RLDataset(IterableDataset):
         self.sample_size = sample_size
 
     def __iter__(self) -> Iterator[Tuple]:
-        (visual_inputs, velocities), actions, rewards, new_states, dones = self._replay_buffer.sample(self.sample_size)
+        (
+            (visual_inputs, velocities),
+            actions,
+            rewards,
+            (new_visual_inputs, new_velocities),
+            dones,
+        ) = self._replay_buffer.sample(self.sample_size)
         for i in range(len(dones)):
-            yield visual_inputs[i], velocities[i], actions[i], rewards[i], new_states[i], dones[i]
+            yield visual_inputs[i], velocities[i], actions[i], rewards[i], new_visual_inputs[i], new_velocities[
+                i
+            ], dones[i]
 
 
 class SACWithSpatialMemoryPipeline(pl.LightningModule):
@@ -116,7 +124,10 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
         # SAC models
         # previous t-step reward, previous action, SMP output, SMP output when last reached goal
-        observation_dim = 1 + 2 + 2 * (hidden_size_RNN1 + hidden_size_RNN2 + hidden_size_RNN3)
+        # observation_dim = 1 + 2 + 2 * nb_memory_slots
+
+        # For now, don't include the previous t-step reward and action
+        observation_dim = 2 * nb_memory_slots
         self.actor = MLPPolicyStochastic(
             entropy_coeff=sac_entropy_coeff,
             ac_dim=action_dim,
@@ -129,25 +140,32 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             ob_dim=observation_dim + action_dim,
             n_layers=policy_n_layers,
             size=policy_net_size,
+            deterministic=True,
         )
         self.q_net2 = ConcatMLP(
             ac_dim=1,
             ob_dim=observation_dim + action_dim,
             n_layers=policy_n_layers,
             size=policy_net_size,
+            deterministic=True,
         )
         self.q_net_target = ConcatMLP(
             ac_dim=1,
             ob_dim=observation_dim + action_dim,
             n_layers=policy_n_layers,
             size=policy_net_size,
+            deterministic=True,
         )
         self.q_net_target2 = ConcatMLP(
             ac_dim=1,
             ob_dim=observation_dim + action_dim,
             n_layers=policy_n_layers,
             size=policy_net_size,
+            deterministic=True,
         )
+        self.q_net_loss = nn.SmoothL1Loss()
+
+        self._last_success_smp_output = torch.zeros(size=(1, nb_memory_slots), device="cuda")
 
         # SMP models
         self._lstm_angular_velocity = nn.LSTMCell(input_size=2, hidden_size=hidden_size_RNN1)
@@ -221,22 +239,35 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         """
         beta_logit = np.log(self._beta)
         # Perhaps we could apply a certain rounding that defines when they are close enough for us not to change it?
-        if p_react_entropy < self._entropy_reactivation_target:
+        if p_react_entropy < self.hparams.entropy_reactivation_target:
             beta_logit += 0.001
-        elif p_react_entropy > self._entropy_reactivation_target:
+        elif p_react_entropy > self.hparams.entropy_reactivation_target:
             beta_logit -= 0.001
         self._beta = float(np.exp(beta_logit))
 
     def training_step(self, batch, batch_idx: int) -> STEP_OUTPUT:
-        visual_obs, velocities, actions, reward, next_obs, done = batch
+        visual_obs, velocities, actions, reward, next_visual_obs, next_velocities, done = batch
 
+        # Generate data with current policy
         self.dummy_agent.step_env()
 
-        smp_predictions, next_smp_predictions = self._perform_smp_training_step(batch[:2], batch_idx)
-        self._sac_training_step(smp_predictions, next_smp_predictions, actions, reward, done, batch_idx)
+        # Train SMP
+        self._perform_smp_training_step(batch, batch_idx)
 
-    def _perform_smp_training_step(self, batch, batch_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        visual_input, velocities = batch
+        # Train SAC agent
+        smp_predictions = torch.squeeze(
+            self._smp_prediction(visual_obs, velocities)[:, -1, :]
+        )  # Take most up-to-date prediction
+        obs = torch.concat([smp_predictions, self._last_success_smp_output.expand(self.hparams.batch_size, -1)], dim=1)
+        next_smp_predictions = torch.squeeze(self._smp_prediction(next_visual_obs, next_velocities)[:, -1, :])
+        next_obs = torch.concat(
+            [next_smp_predictions, self._last_success_smp_output.expand(self.hparams.batch_size, -1)], dim=1
+        )
+        self._sac_training_step(obs, next_obs, actions, reward, done, batch_idx)
+
+    def _perform_smp_training_step(self, batch, batch_idx: int):
+        visual_input, velocities, _, _, _, _, _ = batch
+        visual_input = torch.permute(visual_input, dims=(0, 1, 4, 2, 3))
 
         # A: Calculate the target memories
         # A1: encode observations
@@ -254,6 +285,41 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         self.update_beta(-torch.sum(p_react * torch.log(p_react + 1e-43)))
 
         # A4: Prepare data
+        velocities = self._prepare_velocities(velocities)
+
+        # B: For loop
+        p_pred = self._calculate_p_pred(velocities, y_raw_activation)
+
+        # E: Calculate the loss
+        loss = nn.functional.cross_entropy(torch.flatten(p_pred, end_dim=1), torch.flatten(p_react, end_dim=1))
+        self.log("SMP_loss", loss)
+
+        smp_optimizer = self.optimizers()[0]
+        smp_optimizer.zero_grad()
+        self.manual_backward(loss)
+        smp_optimizer.step()
+
+        # P_storage
+        storage_samples = torch.rand(size=(self.hparams.batch_size, self.hparams.bptt_unroll_len), device=self.device)
+        storage_mask = storage_samples < self.hparams.probability_storage
+        if torch.any(storage_mask):
+            slots_to_store = torch.randperm(self.hparams.nb_memory_slots)[: torch.sum(storage_mask)]
+            indices = torch.nonzero(storage_mask, as_tuple=True)
+            self._visual_memories[slots_to_store] = self._last_y_enc[indices]
+            self._angular_velocity_memories.data[slots_to_store] = self._last_x_1[indices]
+            self._angular_velocity_and_speed_memories.data[slots_to_store] = self._last_x_2[indices]
+            self._no_self_motion_memories.data[slots_to_store] = self._last_x_3[indices]
+
+    def _smp_prediction(self, visual_input: torch.Tensor, velocities: torch.Tensor) -> torch.Tensor:
+        visual_input = torch.permute(visual_input, dims=(0, 1, 4, 2, 3))
+        y_enc = self._auto_encoder.encode(torch.flatten(visual_input, start_dim=0, end_dim=1)).unflatten(
+            dim=0, sizes=visual_input.shape[:2]
+        )
+        y_raw_activation = self._batch_vector_dot(y_enc, self._visual_memories)
+        velocities = self._prepare_velocities(velocities)
+        return self._calculate_p_pred(velocities, y_raw_activation)
+
+    def _prepare_velocities(self, velocities: torch.Tensor) -> torch.Tensor:
         angular_velocity = velocities[:, :, 1]
         velocities = torch.concat(
             [
@@ -269,8 +335,9 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             ],
             dim=-1,
         )
+        return velocities
 
-        # B: For loop
+    def _calculate_p_pred(self, velocities: torch.Tensor, y_raw_activation: torch.Tensor) -> torch.Tensor:
         x_1, h_1 = torch.zeros(
             (self.hparams.batch_size, self.hparams.hidden_size_RNN1), device=self.device
         ), torch.zeros((self.hparams.batch_size, self.hparams.hidden_size_RNN1), device=self.device)
@@ -280,11 +347,9 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         x_3, h_3 = torch.zeros(
             (self.hparams.batch_size, self.hparams.hidden_size_RNN3), device=self.device
         ), torch.zeros((self.hparams.batch_size, self.hparams.hidden_size_RNN3), device=self.device)
-
         xs_1 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN1], device=self.device)
         xs_2 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN2], device=self.device)
         xs_3 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN3], device=self.device)
-
         seq_len = velocities.shape[1]
         correction_samples = np.random.random(size=(seq_len,))
         for t in range(velocities.shape[1]):
@@ -332,10 +397,8 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             self._last_x_1[:, t, :] = x_1.detach()
             self._last_x_2[:, t, :] = x_2.detach()
             self._last_x_3[:, t, :] = x_3.detach()
-
         # D: Calculate the predictions of the RNNs
         # D1: Apply the memory storage mask
-
         # D2: Calculate the predictions # All ok?
         p_pred = (
             self._calculate_activation(self._pi_angular_velocity, xs_1, self._angular_velocity_memories)
@@ -344,28 +407,13 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             )
             * self._calculate_activation(self._pi_no_self_motion, xs_3, self._no_self_motion_memories)
         )  # Batch X Sequence length X nb of slots
-
-        # E: Calculate the loss
-        loss = nn.functional.cross_entropy(torch.flatten(p_pred, end_dim=1), torch.flatten(p_react, end_dim=1))
-        self.log("SMP_loss", loss)
-
-        smp_optimizer = self.optimizers()[0]
-        smp_optimizer.zero_grad()
-        self.manual_backward(loss)
-        smp_optimizer.step()
-
-        # P_storage
-        storage_samples = torch.rand(size=(self.batch_size, self.hparams.bptt_unroll_len), device=self.device)
-        storage_mask = storage_samples < self.hparams.probability_storage
-        if torch.any(storage_mask):
-            slots_to_store = torch.randperm(self.hparams.nb_memory_slots)[: torch.sum(storage_mask)]
-            indices = torch.nonzero(storage_mask, as_tuple=True)
-            self._visual_memories[slots_to_store] = self._last_y_enc[indices]
-            self._angular_velocity_memories.data[slots_to_store] = self._last_x_1[indices]
-            self._angular_velocity_and_speed_memories.data[slots_to_store] = self._last_x_2[indices]
-            self._no_self_motion_memories.data[slots_to_store] = self._last_x_3[indices]
+        return p_pred
 
     def _sac_training_step(self, observation, next_observation, actions, rewards, terminal, batch_idx):
+        """
+        observation: Batch X Nb memory slots
+        """
+
         # Critic Update
         self._train_critic(observation, next_observation, actions, rewards, terminal)
         # Actor Update
@@ -389,24 +437,26 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         qa_tp1_values2 = self.q_net_target2(next_observation, target_actions)
         qa_tp1_values = torch.squeeze(torch.minimum(qa_tp1_values1, qa_tp1_values2))
 
-        qa_tp1_values_reg = qa_tp1_values - (self.sac_entropy_coeff * action_distribution.log_prob(target_actions))
+        qa_tp1_values_reg = qa_tp1_values - (
+            self.hparams.sac_entropy_coeff * action_distribution.log_prob(target_actions)
+        )
 
         target = rewards + self.hparams.sac_gamma * qa_tp1_values_reg * (1 - terminal)
         target = target.detach()
 
-        loss = self.loss(q_t_values, target)
+        loss = self.q_net_loss(q_t_values, target)
         self.log("Q_net1_loss", loss)
         q_net_optimizer.zero_grad()
-        self.manual_backward(loss)
+        self.manual_backward(loss, retain_graph=True)
         self.clip_gradients(
             q_net_optimizer, gradient_clip_val=self.hparams.sac_gradient_clipping, gradient_clip_algorithm="norm"
         )
         q_net_optimizer.step()
 
-        loss2 = self.loss(q_t_values2, target)
+        loss2 = self.q_net_loss(q_t_values2, target)
         self.log("Q_net2_loss", loss)
         q_net2_optimizer.zero_grad()
-        self.manual_backward(loss2)
+        self.manual_backward(loss2, retain_graph=True)
         self.clip_gradients(
             q_net2_optimizer, gradient_clip_val=self.hparams.sac_gradient_clipping, gradient_clip_algorithm="norm"
         )
@@ -422,7 +472,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         loss = torch.mean(
             -(
                 torch.squeeze(torch.minimum(q_values1, q_values2))
-                - self.entropy_coeff * action_distribution.log_prob(actions)
+                - self.hparams.sac_entropy_coeff * action_distribution.log_prob(actions)
             )
         )
         self.log("Actor_loss", loss)
@@ -463,7 +513,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                     {"params": self._lstm_angular_velocity_and_speed.parameters()},
                     {"params": self._lstm_no_self_motion.parameters()},
                 ],
-                lr=self._learning_rate,
+                lr=self.hparams.learning_rate,
             ),
             torch.optim.Adam(self.actor.parameters(), lr=self.hparams.learning_rate),
             torch.optim.Adam(self.q_net.parameters(), lr=self.hparams.learning_rate),
@@ -510,7 +560,6 @@ def run_rl_experiment(config: DictConfig) -> None:
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
         max_epochs=5,
-        max_steps=10,
         default_root_dir=original_cwd,
         logger=tb_logger,
         log_every_n_steps=1,

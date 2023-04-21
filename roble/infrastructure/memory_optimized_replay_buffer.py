@@ -67,9 +67,18 @@ class MemoryOptimizedReplayBuffer(object):
         act_batch = self.action[idxes]
         rew_batch = self.reward[idxes]
         next_obs_batch = np.concatenate([self._encode_observation(idx + 1)[None] for idx in idxes], 0)
+        next_obs_velocities_batch = np.concatenate(
+            [self._encode_specific_observation(idx + 1, self.obs_velocities)[None] for idx in idxes], 0
+        )
         done_mask = np.array([1.0 if self.done[idx] else 0.0 for idx in idxes], dtype=np.float32)
 
-        return (obs_batch, obs_velocities_batch), act_batch, rew_batch, next_obs_batch, done_mask
+        return (
+            (obs_batch, obs_velocities_batch),
+            act_batch,
+            rew_batch,
+            (next_obs_batch, next_obs_velocities_batch),
+            done_mask,
+        )
 
     def sample(self, batch_size):
         """Sample `batch_size` different transitions.
@@ -161,8 +170,8 @@ class MemoryOptimizedReplayBuffer(object):
         start_idx = end_idx - self._frame_history_len
         # this checks if we are using low-dimensional observations, such as RAM
         # state, in which case we just directly return the latest RAM.
-        if len(obs.shape) == 2:
-            return obs[end_idx - 1]
+        # if len(obs.shape) == 2:
+        #     return obs[end_idx - 1]
         # if there weren't enough frames ever in the buffer for context
         if start_idx < 0 and self.num_in_buffer != self._size:
             start_idx = 0
@@ -209,7 +218,9 @@ class MemoryOptimizedReplayBuffer(object):
             Index at which the frame is stored. To be used for `store_effect` later.
         """
         if self.obs is None:
-            self.obs = np.empty([self._size] + list(frame.shape), dtype=np.float32 if self._lander else np.uint8)
+            self.obs = np.empty(
+                [self._size] + list(frame.shape), dtype=np.uint8
+            )  # dtype=np.float32 if self._lander else )
             self.obs_velocities = np.empty([self._size] + list(velocities.shape), dtype=np.float32)
             ## If discrete actions then just need a list of integers
             ## If continuous actions need a matrix to store action vector for each step

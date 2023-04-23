@@ -5,6 +5,7 @@ import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch.nn.functional import normalize
 from lightning import pytorch as pl
 from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT
@@ -192,7 +193,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         # D: Calculate the predictions of the RNNs
         # D1: Apply the memory storage mask
 
-        # D2: Calculate the predictions # All ok?
+        # D2: Calculate the predictions
         p_pred = nn.functional.softmax(
             self._calculate_activation(self._pi_angular_velocity, xs_1, self._angular_velocity_memories)
             + self._calculate_activation(
@@ -224,12 +225,20 @@ class SpatialMemoryPipeline(pl.LightningModule):
         storage_samples = torch.rand(size=(self.batch_size, 50), device=self.device)
         storage_mask = storage_samples < self._probability_storage
         if torch.any(storage_mask):
+            vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
+                                                          self._visual_memories.min()])))
+            av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
+                                                          self._angular_velocity_memories.min()])))
+            avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
+                                                          self._angular_velocity_and_speed_memories.min()])))
+            nsm_range = torch.max(torch.abs(torch.Tensor([self._visual_m_no_self_motion_memoriesemories.max(),
+                                                          self._no_self_motion_memories.min()])))
             self.slots_to_store = torch.randperm(self._nb_memory_slots)[: torch.sum(storage_mask)]
             indices = torch.nonzero(storage_mask, as_tuple=True)
-            self._visual_memories[:, self.slots_to_store] = self._last_y_enc[indices].T
-            self._angular_velocity_memories.data[:, self.slots_to_store] = self._last_x_1[indices].T
-            self._angular_velocity_and_speed_memories.data[:, self.slots_to_store] = self._last_x_2[indices].T
-            self._no_self_motion_memories.data[:, self.slots_to_store] = self._last_x_3[indices].T
+            self._visual_memories[:, self.slots_to_store] = normalize(self._last_y_enc[indices].T) * vis_range
+            self._angular_velocity_memories.data[:, self.slots_to_store] = normalize(self._last_x_1[indices].T) * av_range
+            self._angular_velocity_and_speed_memories.data[:, self.slots_to_store] = normalize(self._last_x_2[indices].T) * avs_range
+            self._no_self_motion_memories.data[:, self.slots_to_store] = normalize(self._last_x_3[indices].T) * nsm_range
 
     def configure_optimizers(self):
         return torch.optim.Adam(

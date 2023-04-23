@@ -231,7 +231,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
                                                           self._angular_velocity_memories.min()])))
             avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
                                                           self._angular_velocity_and_speed_memories.min()])))
-            nsm_range = torch.max(torch.abs(torch.Tensor([self._visual_m_no_self_motion_memoriesemories.max(),
+            nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
                                                           self._no_self_motion_memories.min()])))
             self.slots_to_store = torch.randperm(self._nb_memory_slots)[: torch.sum(storage_mask)]
             indices = torch.nonzero(storage_mask, as_tuple=True)

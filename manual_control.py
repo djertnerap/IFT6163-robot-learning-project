@@ -19,7 +19,7 @@ import environ
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--env-name", default="MiniWorld-OpenField-v0")
+parser.add_argument("--env-name", default="MiniWorld-OpenField-Goal-v0")
 parser.add_argument("--domain-rand", action="store_true", help="enable domain randomization")
 parser.add_argument("--no-time-limit", action="store_true", help="ignore time step limits")
 parser.add_argument(

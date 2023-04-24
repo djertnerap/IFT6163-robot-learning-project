@@ -1,11 +1,11 @@
-experiment_type: "rl"  # ["vae", "smp", "rl"]
+experiment_type: "smp"  # ["vae", "smp", "rl"]
 
 hardware:
     accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
-    smp_dataset_folder_path: '/data'
-    num_data_loader_workers: 0  # Set to you numbers of CPU cores for smp
+    smp_dataset_folder_path: '/network/scratch/a/aleksei.efremov/data'
+    num_data_loader_workers: 16  # Set to you numbers of CPU cores for smp
 
 env:
     img_size: 64
@@ -33,10 +33,10 @@ vae:
 # Spatial Memory Pipeline (SMP) parameters
 smp:
     n_iter: 2 #200000
-    max_epochs: 2
+    max_epochs: 800
     max_steps: 200000
     entropy_reactivation_target: 0.5  # H_react
-    beta: 1.0  # beta
+    beta: 2  # beta
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0000625  # P_storage
     nb_memory_slots: 512  # S
@@ -48,7 +48,8 @@ smp:
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2
-    ae_checkpoint_path: "/checkpoints/rat_autoencoder-epoch=402-train_loss=0.00.ckpt"
+    ae_checkpoint_path: "/checkpoints/rat_ae-epoch=23-train_loss=0.001255.ckpt"
+    saved_model_path: False # [False, "/checkpoints/epoch=189-step=47500.ckpt"]
     hidden_size_RNN1: 32
     hidden_size_RNN2: 128
     hidden_size_RNN3: 128
@@ -79,8 +80,7 @@ rlsmp:
     rnn_dropout: 0.5
     adam_beta1: 0.9  # beta_1
     adam_beta2: 0.999  # beta_2
-    ae_checkpoint_path: "/checkpoints/rat_autoencoder-epoch=402-train_loss=0.00.ckpt"
-    sac_entropy_coeff: 0.2
+    ae_checkpoint_path: "/checkpoints/rat_ae-epoch=23-train_loss=0.001255.ckpt"
     hidden_size_RNN1: 32
     hidden_size_RNN2: 768
     hidden_size_RNN3: 128

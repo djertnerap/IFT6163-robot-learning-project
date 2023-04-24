@@ -15,3 +15,17 @@ gym_id = "MiniWorld-OpenField-v1"
 entry_point = "environ:OpenField"
 
 gym.envs.registration.register(id=gym_id, entry_point=entry_point, kwargs={"continuous": True})
+
+gym_id = "MiniWorld-OpenField-Goal-v0"
+entry_point = "environ:OpenField"
+
+gym.envs.registration.register(
+    id=gym_id,
+    entry_point=entry_point,
+    kwargs={"target": True}
+)
+
+gym_id = "MiniWorld-OpenField-Goal-v1"
+entry_point = "environ:OpenField"
+
+gym.envs.registration.register(id=gym_id, entry_point=entry_point, kwargs={"continuous": True, "target": True})

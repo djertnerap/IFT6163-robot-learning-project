@@ -5,10 +5,16 @@ from typing import Optional
 
 import numpy as np
 from gymnasium import spaces
-from miniworld.entity import Agent, MeshEnt
+from miniworld.entity import Agent, MeshEnt, Entity
 from miniworld.miniworld import MiniWorldEnv
 from miniworld.params import DEFAULT_PARAMS
 
+class Goal(Entity):
+    def __init__(self, radius=0.1):
+        super().__init__()
+        self.radius = radius
+    def render(self):
+        pass
 
 class Rat(Agent):
     def __init__(self):
@@ -143,10 +149,11 @@ class OpenField(RatWorldEnv):
 
     """
 
-    def __init__(self, size=23, continuous=False, **kwargs):
+    def __init__(self, size=23, continuous=False, target=False, **kwargs):
         assert size >= 2
         self.size = size
         self.continuous = continuous
+        self.target = target
         super().__init__(**kwargs)
 
         if continuous:
@@ -211,6 +218,9 @@ class OpenField(RatWorldEnv):
             dir=-math.pi,
         )
 
+        if self.target:
+            self.goal = self.place_entity(Goal(), pos=np.array([5, 0, 5]))
+
         self.place_agent()
 
     def turn_agent_cont(self, turn_angle):
@@ -266,18 +276,26 @@ class OpenField(RatWorldEnv):
             elif action == self.actions.turn_right:
                 self.turn_agent(-turn_step)
 
-        # Generate the current camera image
-        obs = self.render_obs()
-
         # If the maximum time step count is reached
         if self.step_count >= self.max_episode_steps:
             termination = False
             truncation = True
             reward = 0
-            return obs, reward, termination, truncation, {}
+            # return obs, reward, termination, truncation, {}
+        # If the goal is reached
+        elif self.target and self.near(self.goal):
+            self.step_count = 0
+            self.place_agent()
+            reward = self._reward()
+            termination = False
+            truncation = False
 
-        reward = 0
-        termination = False
-        truncation = False
+        else:
+            reward = 0
+            termination = False
+            truncation = False
+
+        # Generate the current camera image
+        obs = self.render_obs()
 
         return obs, reward, termination, truncation, {}

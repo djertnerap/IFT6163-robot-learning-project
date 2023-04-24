@@ -94,4 +94,4 @@ rlsmp:
 logging:
     seed: 1234
     exp: traj
-    n_traj: 32
+    n_traj: 800

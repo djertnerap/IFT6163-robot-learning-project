@@ -9,6 +9,7 @@ from torch.nn.functional import normalize
 from lightning import pytorch as pl
 from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT, TRAIN_DATALOADERS
+from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig
 from torch import nn
 from torch.utils.data import DataLoader, IterableDataset
@@ -330,7 +331,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         # E: Calculate the loss
         loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()
         self.log("SMP_loss", loss)
-        self.log('stored_memory_slots', len(self.slots_to_store))
+        self.log('stored_memory_slots', float(len(self.slots_to_store)))
         self.log('beta', self._beta)
 
         smp_optimizer = self.optimizers()[0]
@@ -668,6 +669,14 @@ def run_rl_experiment(config: DictConfig) -> None:
         replay_buffer_size=config["rlsmp"]["replay_buffer_size"],
         max_steps=config["rlsmp"]["max_steps"],
     )
+    
+    checkpoint_callback = ModelCheckpoint(
+        monitor="SMP_loss",
+        filename="rlsmp-{epoch:02d}-{SMP_loss:.3f}",
+        save_top_k=3,
+        save_last=True,
+        mode="min",
+    )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
@@ -675,6 +684,7 @@ def run_rl_experiment(config: DictConfig) -> None:
         max_steps=config["rlsmp"]["max_steps"],
         default_root_dir=original_cwd,
         logger=tb_logger,
+        callbacks=[checkpoint_callback],
         log_every_n_steps=1,
         profiler="simple",
     )

@@ -4,8 +4,8 @@ hardware:
     accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
-    smp_dataset_folder_path: '/data/'
-    num_data_loader_workers: 16  # Set to you numbers of CPU cores for smp
+    smp_dataset_folder_path: '/network/scratch/a/aleksei.efremov/data'
+    num_data_loader_workers: 6  # Set to you numbers of CPU cores for smp
 
 env:
     img_size: 64
@@ -66,24 +66,22 @@ rl:
 
 rlsmp:
     n_iter: 2 #200000
-    max_epochs: 10
+    max_epochs: 800
     max_steps: 200000
     entropy_reactivation_target: 1.0  # H_react
     beta: 2.0  # beta
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0001  # P_storage
-    nb_memory_slots: 1024  # S
+    nb_memory_slots: 512  # S
     episode_len: 25
-    bptt_unroll_length: 20
-    batch_size: 3
+    bptt_unroll_length: 50
+    batch_size: 32
     memory_slot_learning_rate: 0.003
     learning_rate: 0.001
     rnn_dropout: 0.5
-    adam_beta1: 0.9  # beta_1
-    adam_beta2: 0.999  # beta_2
     ae_checkpoint_path: "/checkpoints/rat_ae-epoch=23-train_loss=0.001255.ckpt"
     hidden_size_RNN1: 32
-    hidden_size_RNN2: 768
+    hidden_size_RNN2: 128
     hidden_size_RNN3: 128
     policy_n_layers: 1
     policy_net_size: 256

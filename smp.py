@@ -82,9 +82,6 @@ class SpatialMemoryPipeline(pl.LightningModule):
     def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> STEP_OUTPUT:
         # visual_input: Batch X Sequence length X nb channels X img_size X img_size
         # velocities: Batch X Sequence length X 2 (linear speed, angular velocity)
-        # self._last_x_1 = torch.zeros(size=[self.batch_size, self._sequence_length, self._hidden_size_RNN1], device=self.device)
-        # self._last_x_2 = torch.zeros(size=[self.batch_size, self._sequence_length, self._hidden_size_RNN2], device=self.device)
-        # self._last_x_3 = torch.zeros(size=[self.batch_size, self._sequence_length, self._hidden_size_RNN3], device=self.device)
 
         visual_input, velocities = batch
 
@@ -95,18 +92,12 @@ class SpatialMemoryPipeline(pl.LightningModule):
         )  # Batch X Sequence length X encoding dimension
         # self._last_y_enc = y_enc.detach()
 
-        # A2: calculate probabilities of reactivation
+        # A2: initialize P distributions
         # Batch X Sequence length X nb of slots
-        # y_raw_activation = y_enc @ self._visual_memories
-        # p_react = nn.functional.softmax(self._calculate_activation(self._beta, y_enc, self._visual_memories), dim=-1)
         p_react = torch.zeros(size=[self.batch_size, self._sequence_length, self._nb_memory_slots], device=self.device)
         p_pred = torch.zeros(size=[self.batch_size, self._sequence_length, self._nb_memory_slots], device=self.device)
 
-        # # A3: update beta
-        # p_react_entropy = -torch.sum(p_react * torch.log(p_react + 1e-43), dim=-1).mean()
-        # self.update_beta(p_react_entropy)
-
-        # A4: Prepare data
+        # A3: Prepare data
         angular_velocity = velocities[:, :, 1]
         velocities = torch.concat(
             [
@@ -214,7 +205,6 @@ class SpatialMemoryPipeline(pl.LightningModule):
             # C1: Decide if the correction is happening
             if correction_samples[t] < self._probability_correction:
                 # C2: calculate weights
-                # unscaled_visual_activations = self._gamma * y_raw_activation[:, t, :].squeeze()
                 unscaled_visual_activations = self._gamma * y_raw_activation.squeeze()
                 weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
@@ -240,12 +230,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
             xs_1[:, t, :] = out_1
             xs_2[:, t, :] = out_2
             xs_3[:, t, :] = out_3
-            # self._last_x_1[:, t, :] = x_1.detach()
-            # self._last_x_2[:, t, :] = x_2.detach()
-            # self._last_x_3[:, t, :] = x_3.detach()
 
         # D: Calculate the predictions of the RNNs
-        # D1: Apply the memory storage mask
+        # D1: Calculate the rest of p_react
         p_react[:, start_t:, :] = nn.functional.softmax(self._calculate_activation(self._beta,
                                                                                        y_enc[:, start_t:, :],
                                                                                        self._visual_memories),
@@ -268,7 +255,6 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # E: Calculate the loss
         loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()
-        # loss = nn.functional.cross_entropy(torch.flatten(p_pred, end_dim=1), torch.flatten(p_react, end_dim=1))
 
         if torch.isnan(loss):
             print("loss is NaN")
@@ -282,38 +268,9 @@ class SpatialMemoryPipeline(pl.LightningModule):
     def _calculate_activation(
         cls, entropy_coeff: Union[float, torch.Tensor], activation_vector: torch.Tensor, memory: torch.Tensor
     ) -> torch.Tensor:
-        # return torch.exp_(entropy_coeff * (activation_vector @ memory))
         return entropy_coeff * (activation_vector @ memory)
 
     def on_after_backward(self):
-    #     # P_storage
-    #     storage_samples = torch.rand(size=(self.batch_size, 50), device=self.device) * 32
-    #     storage_mask = storage_samples < self._probability_storage
-    #     if torch.any(storage_mask):
-    #         vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
-    #                                                       self._visual_memories.min()])))
-    #         av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
-    #                                                       self._angular_velocity_memories.min()])))
-    #         avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
-    #                                                       self._angular_velocity_and_speed_memories.min()])))
-    #         nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
-    #                                                       self._no_self_motion_memories.min()])))
-    #         self.slots_to_store = torch.randperm(self._nb_memory_slots)[: torch.sum(storage_mask)]
-    #         for i in range(len(self.slots_to_store)):
-    #             self.log('saved_memory_slot_' +str(i+1), self.slots_to_store[i])
-    #         indices = torch.nonzero(storage_mask, as_tuple=True)
-    #         self._visual_memories[:, self.slots_to_store] = normalize(self._last_y_enc[indices].T) * vis_range
-            
-    #         with torch.no_grad():
-    #             memory = nn.functional.softmax(self._calculate_activation(self._beta,
-    #                                                                       self._last_y_enc[indices],
-    #                                                                       self._visual_memories),
-    #                                            dim=-1)
-    #         for i in range(len(self.slots_to_store)):
-    #             self.log('saved_memory_'+str(i+1), memory[i].argmax())
-    #         self._angular_velocity_memories.data[:, self.slots_to_store] = normalize(self._last_x_1[indices].T) * av_range
-    #         self._angular_velocity_and_speed_memories.data[:, self.slots_to_store] = normalize(self._last_x_2[indices].T) * avs_range
-    #         self._no_self_motion_memories.data[:, self.slots_to_store] = normalize(self._last_x_3[indices].T) * nsm_range
         with torch.no_grad():
             self._angular_velocity_memories.data = self._angular_velocity_memories*self.mask_1[-1]
             self._angular_velocity_and_speed_memories.data = self._angular_velocity_and_speed_memories*self.mask_2[-1]

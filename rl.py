@@ -109,7 +109,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
         # Live loop parameters
         self.last_obs, _ = self.env.reset(seed=1)
-        self.last_obs=self.last_obs/255
+        self.last_obs = self.last_obs / 255
         self.last_velocities = np.zeros(2)
 
         self.x_1, self.h_1 = torch.zeros((hidden_size_RNN1,), device="cuda"), torch.zeros(
@@ -207,7 +207,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         for t in tqdm(range(traj.shape[1]), desc=f"Warm start replay buffer"):
             # Slow movement speed to minimize resets
             action = traj[:, t]
-            replay_buffer_idx = self.replay_buffer.store_frame(last_obs/255, last_velocity)
+            replay_buffer_idx = self.replay_buffer.store_frame(last_obs / 255, last_velocity)
 
             last_velocity = action
             last_obs, reward, termination, truncation, info = self.env.step(action)
@@ -300,14 +300,14 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         action = torch.squeeze(self.actor.get_action(torch.unsqueeze(policy_input, dim=0)))
         self.last_velocities = action.cpu().detach().numpy()
         self.last_obs, reward, done, truncation, info = self.env.step(self.last_velocities)
-        self.last_obs=self.last_obs/255
+        self.last_obs = self.last_obs / 255
 
         if reward:
             self._last_success_smp_output = output
 
         self.replay_buffer.store_effect(idx=replay_buffer_idx, action=self.last_velocities, reward=reward, done=done)
-        self.log("Last_reward", reward)
-        self.rewards.append(reward)
+        self.log("Last_reward", float(reward))
+        self.rewards.append(float(reward))
         self.log('Average_reward', np.mean(self.rewards[-300:]))
         self.log('Sum_reward', np.sum(self.rewards))
 

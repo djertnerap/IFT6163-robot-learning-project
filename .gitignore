@@ -136,7 +136,7 @@ ratinabox.ipynb
 .vscode/launch.json
 
 outputs/
-images/
+results/
 lightning_logs/
 data/
 test.ipynb

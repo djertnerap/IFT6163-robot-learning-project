@@ -7,6 +7,7 @@ from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.callbacks import ModelCheckpoint
 from omegaconf import DictConfig
 from torch import nn
+from torchvision.utils import save_image
 from torch.nn import functional as F
 
 from rat_dataset import RatDataModule

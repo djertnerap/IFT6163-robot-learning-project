@@ -10,7 +10,7 @@ from miniworld.miniworld import MiniWorldEnv
 from miniworld.params import DEFAULT_PARAMS
 
 class Goal(Entity):
-    def __init__(self, radius=0.4):
+    def __init__(self, radius=1):
         super().__init__()
         self.radius = radius
     def render(self):
@@ -286,9 +286,15 @@ class OpenField(RatWorldEnv):
         elif self.target and self.near(self.goal):
             self.step_count = 0
             self.place_agent()
-            reward = self._reward()
+            reward = self._reward()+1
             termination = False
             truncation = False
+
+        elif self.target:
+            reward = np.exp(-np.linalg.norm(self.goal.pos - self.agent.pos))
+            termination = False
+            truncation = False
+
 
         else:
             reward = 0

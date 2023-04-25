@@ -12,7 +12,7 @@ from roble.util.class_util import hidden_member_initialize
 
 class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
     @hidden_member_initialize
-    def __init__(self, ac_dim, ob_dim, n_layers, size, deterministic=False, **kwargs):
+    def __init__(self, ac_dim, ob_dim, n_layers, size, deterministic=False, use_tanh=True, **kwargs):
         super().__init__(**kwargs)
 
         self._logits_na = None
@@ -53,6 +53,11 @@ class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
             batch_dim = batch_mean.shape[0]
             batch_scale_tril = scale_tril.repeat(batch_dim, 1, 1)
             action_distribution = distributions.MultivariateNormal(batch_mean, scale_tril=batch_scale_tril)
+            if self._use_tanh:
+                action_distribution = distributions.transformed_distribution.TransformedDistribution(
+                    action_distribution,
+                    [distributions.TanhTransform(), distributions.AffineTransform(0, torch.Tensor([0.3, 1]))],
+                )
             return action_distribution
 
 

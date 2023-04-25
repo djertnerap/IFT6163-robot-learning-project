@@ -56,7 +56,7 @@ class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
             if self._use_tanh:
                 action_distribution = distributions.transformed_distribution.TransformedDistribution(
                     action_distribution,
-                    [distributions.TanhTransform(), distributions.AffineTransform(0, torch.Tensor([0.3, 1]))],
+                    [distributions.TanhTransform(), distributions.AffineTransform(0, torch.Tensor([0.3, 1]).to('cuda'))],
                 )
             return action_distribution
 

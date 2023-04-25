@@ -1,10 +1,10 @@
-experiment_type: "smp"  # ["vae", "smp", "rl"]
+experiment_type: "rl"  # ["vae", "smp", "rl"]
 
 hardware:
     accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
-    smp_dataset_folder_path: '/network/scratch/a/aleksei.efremov/data'
+    smp_dataset_folder_path: '/data/'
     num_data_loader_workers: 16  # Set to you numbers of CPU cores for smp
 
 env:
@@ -15,7 +15,7 @@ vae:
     do_train: True
     train_batch_size: 50
     eval_batch_size: 50
-    max_epochs: 420
+    max_epochs: 625
     max_steps: 200000
     in_channels: 3
     latent_dim: 64  # Dimension of the output vector of the encoder
@@ -36,7 +36,7 @@ smp:
     max_epochs: 800
     max_steps: 200000
     entropy_reactivation_target: 0.5  # H_react
-    beta: 2  # beta
+    beta: 2.0  # beta
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0000625  # P_storage
     nb_memory_slots: 512  # S
@@ -69,11 +69,12 @@ rlsmp:
     max_epochs: 10
     max_steps: 200000
     entropy_reactivation_target: 1.0  # H_react
+    beta: 2.0  # beta
     prob_correction: 0.1  # P_correction
     prob_storage: 0.0001  # P_storage
     nb_memory_slots: 1024  # S
     episode_len: 25
-    bptt_unroll_length: 2
+    bptt_unroll_length: 20
     batch_size: 3
     memory_slot_learning_rate: 0.003
     learning_rate: 0.001
@@ -90,6 +91,8 @@ rlsmp:
     target_update_freq: 1
     polyak_avg: 0.99
     sac_gamma: 0.99
+    sac_entropy_coeff: 0.2
+    replay_buffer_size: 1000000
 
 logging:
     seed: 1234

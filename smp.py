@@ -2,7 +2,6 @@ import os
 from typing import Tuple, Union
 
 import hydra
-import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch.nn.functional import normalize
@@ -11,6 +10,7 @@ from lightning.pytorch import loggers as pl_loggers
 from lightning.pytorch.utilities.types import STEP_OUTPUT
 from omegaconf import DictConfig
 from torch import nn
+from torchvision.utils import save_image
 
 from rat_dataset import SequencedDataModule
 from vae import LitAutoEncoder

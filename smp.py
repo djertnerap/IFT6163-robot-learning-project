@@ -137,30 +137,19 @@ class SpatialMemoryPipeline(pl.LightningModule):
         seq_len = velocities.shape[1]
         correction_samples = np.random.random(size=(seq_len,))
         storage_samples = np.random.random(size=(seq_len,))
-        start_t = 0
+        storage_samples[0] = 1
+        start_t = [0]
 
         for t in range(seq_len):
 
             # P_storage
             if storage_samples[t] < self._probability_storage:
-
-                p_react[:, start_t:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                                y_enc[:, start_t:t, :],
+                
+                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
+                                                                                                y_enc[:, start_t[-1]:t, :],
                                                                                                 self._visual_memories),
-                                                                     dim=-1)
-                p_pred[:, start_t:t, :] = nn.functional.softmax(
-                        self._calculate_activation(self._pi_angular_velocity,
-                                                   xs_1[:, start_t:t, :],
-                                                   self._angular_velocity_memories*self.mask_1[-1])
-                        + self._calculate_activation(self._pi_angular_velocity_and_speed,
-                                                     xs_2[:, start_t:t, :],
-                                                     self._angular_velocity_and_speed_memories*self.mask_2[-1])
-                        + self._calculate_activation(self._pi_no_self_motion,
-                                                     xs_3[:, start_t:t, :],
-                                                     self._no_self_motion_memories*self.mask_3[-1]),
-                        dim=-1
-                    )  # Batch X Sequence length X nb of slots
-                start_t=t
+                                                                    dim=-1)
+                start_t.append(t)
 
                 self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
                                                           self._visual_memories.min()]))).detach()
@@ -209,11 +198,11 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
                 # C3: Calculate weighted memories
-                angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories.T, dim=-2)
+                angular_velocity_x_tilde = torch.sum(weights * (self._angular_velocity_memories*self.mask_1[-1]).T, dim=-2)
                 angular_velocity_and_speed_x_tilde = torch.sum(
-                    weights * self._angular_velocity_and_speed_memories.T, dim=-2
+                    weights * (self._angular_velocity_and_speed_memories*self.mask_2[-1]).T, dim=-2
                 )
-                no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories.T, dim=-2)
+                no_self_motion_x_tilde = torch.sum(weights * (self._no_self_motion_memories*self.mask_3[-1]).T, dim=-2)
 
                 # C4: Apply corrections
                 x_1, h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (x_1, h_1))
@@ -233,25 +222,27 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         # D: Calculate the predictions of the RNNs
         # D1: Calculate the rest of p_react
-        p_react[:, start_t:, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                       y_enc[:, start_t:, :],
+        p_react[:, start_t[-1]:, :] = nn.functional.softmax(self._calculate_activation(self._beta,
+                                                                                       y_enc[:, start_t[-1]:, :],
                                                                                        self._visual_memories),
                                                             dim=-1)
         p_react_entropy = -torch.sum(p_react * torch.log(p_react + 1e-43), dim=-1).mean()
         self.update_beta(p_react_entropy)
         # D2: Calculate the predictions
-        p_pred[:, start_t:, :] = nn.functional.softmax(
-            self._calculate_activation(self._pi_angular_velocity,
-                                       xs_1[:, start_t:, :],
-                                       self._angular_velocity_memories*self.mask_1[-1])
-            + self._calculate_activation(self._pi_angular_velocity_and_speed,
-                                         xs_2[:, start_t:, :],
-                                         self._angular_velocity_and_speed_memories*self.mask_2[-1])
-            + self._calculate_activation(self._pi_no_self_motion,
-                                         xs_3[:, start_t:, :],
-                                         self._no_self_motion_memories*self.mask_3[-1]),
-            dim=-1
-        )  # Batch X Sequence length X nb of slots
+        start_t.append(50)
+        for i in range(len(start_t)-1):
+            p_pred[:, start_t[i]:start_t[i+1], :] = nn.functional.softmax(
+                self._calculate_activation(self._pi_angular_velocity,
+                                        xs_1[:, start_t[i]:start_t[i+1], :],
+                                        self._angular_velocity_memories*self.mask_1[i])
+                + self._calculate_activation(self._pi_angular_velocity_and_speed,
+                                            xs_2[:, start_t[i]:start_t[i+1], :],
+                                            self._angular_velocity_and_speed_memories*self.mask_2[i])
+                + self._calculate_activation(self._pi_no_self_motion,
+                                            xs_3[:, start_t[i]:start_t[i+1], :],
+                                            self._no_self_motion_memories*self.mask_3[i]),
+                dim=-1
+            )  # Batch X Sequence length X nb of slots
 
         # E: Calculate the loss
         loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()

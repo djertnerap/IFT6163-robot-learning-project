@@ -326,7 +326,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         velocities = self._prepare_velocities(velocities)
 
         # B: For loop
-        p_react, p_pred = self._calculate_p(velocities, y_enc, smp=True)[:2]
+        p_react, p_pred = self._calculate_p(velocities, y_enc, smp=True)
 
         # E: Calculate the loss
         loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()
@@ -352,7 +352,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         )
         velocities = self._prepare_velocities(velocities)
         self.eval()
-        out = self._calculate_p(velocities, y_enc, smp=False)[2:]
+        out = self._calculate_p(velocities, y_enc, smp=False)
         self.train()
         return torch.concat(out, dim=1)
 
@@ -466,7 +466,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                 weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
                 # C3: Calculate weighted memories
-                angular_velocity_x_tilde = torch.sum(weights * (self._angular_velocity_memorie*self.mask_1[-1]).T, dim=-2)
+                angular_velocity_x_tilde = torch.sum(weights * (self._angular_velocity_memories*self.mask_1[-1]).T, dim=-2)
                 angular_velocity_and_speed_x_tilde = torch.sum(
                     weights * (self._angular_velocity_and_speed_memories*self.mask_2[-1]).T, dim=-2
                 )

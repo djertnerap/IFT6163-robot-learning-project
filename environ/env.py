@@ -10,7 +10,7 @@ from miniworld.miniworld import MiniWorldEnv
 from miniworld.params import DEFAULT_PARAMS
 
 class Goal(Entity):
-    def __init__(self, radius=0.1):
+    def __init__(self, radius=0.4):
         super().__init__()
         self.radius = radius
     def render(self):
@@ -31,7 +31,7 @@ class Rat(Agent):
 class RatWorldEnv(MiniWorldEnv, ABC):
     def __init__(
         self,
-        max_episode_steps: int = 12000,
+        max_episode_steps: int = 3000,
         obs_width: int = 80,
         obs_height: int = 60,
         window_width: int = 800,

@@ -139,6 +139,7 @@ outputs/
 results/
 lightning_logs/
 data/
+data2/
 test.ipynb
 checkpoints/
 .vscode/tasks.json

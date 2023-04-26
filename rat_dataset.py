@@ -16,7 +16,6 @@ from torchvision.datasets import ImageFolder
 from torchvision.transforms import ToTensor
 
 import generate_data
-from agents.walker import run_random_walk
 
 
 class RatDataModule(pl.LightningDataModule):
@@ -113,6 +112,7 @@ class SequenceDataset(Dataset):
         chunk = index % self.traj_chunks
 
         acts = self.trajs[traj, :, chunk * self.seq_length : (chunk + 1) * self.seq_length].T
+        
 
         first_img_idx = chunk * self.seq_length
         img_path = Path(str(self._subfloder) + str(traj) + "/Images")

@@ -6,8 +6,6 @@ import gymnasium as gym
 import hydra
 from omegaconf import DictConfig
 
-import environ
-from agents.walker import run_random_walk
 
 
 def generate_data(cfg: DictConfig):
@@ -17,6 +15,7 @@ def generate_data(cfg: DictConfig):
 
     data_path = os.path.abspath(hydra.utils.get_original_cwd() + cfg.hardware.smp_dataset_folder_path)
 
+    import environ
     env = gym.make(
         "MiniWorld-OpenField-v1",
         view="agent",
@@ -34,6 +33,7 @@ def generate_data(cfg: DictConfig):
 
         seed = cfg.logging.seed + i
 
+        from agents.walker import run_random_walk
         run_random_walk(
             time=cfg.smp.episode_len,
             seed=seed,

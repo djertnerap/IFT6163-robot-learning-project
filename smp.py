@@ -4,6 +4,7 @@ from typing import Tuple, Union
 import hydra
 import numpy as np
 import torch
+from lightning.pytorch.callbacks import ModelCheckpoint
 from torch.nn.functional import normalize
 from lightning import pytorch as pl
 from lightning.pytorch import loggers as pl_loggers
@@ -361,6 +362,14 @@ def run_smp_experiment(config: DictConfig):
             sequence_length=config["smp"]["bptt_unroll_length"],
         )
 
+    checkpoint_callback = ModelCheckpoint(
+        monitor="train_loss",
+        filename="smp-{epoch:02d}-{train_loss:.3f}",
+        save_top_k=3,
+        save_last=True,
+        mode="min",
+    )
+
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
         accelerator=config["hardware"]["accelerator"],
@@ -368,6 +377,7 @@ def run_smp_experiment(config: DictConfig):
         max_steps=config["smp"]["max_steps"],
         default_root_dir=original_cwd,
         logger=tb_logger,
+        callbacks=[checkpoint_callback],
         log_every_n_steps=1,
         profiler="simple",
         # detect_anomaly=True

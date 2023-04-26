@@ -250,9 +250,11 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         last_success_smp_output = torch.unsqueeze(self._last_success_smp_output, dim=0).expand(
             self.hparams.batch_size, -1
         )
-        smp_predictions = self._smp_prediction(visual_obs, velocities)  # Take most up-to-date prediction
+        with torch.no_grad():
+            smp_predictions = self._smp_prediction(visual_obs, velocities)  # Take most up-to-date prediction
         obs = torch.concat([smp_predictions, last_success_smp_output], dim=1)
-        next_smp_predictions = self._smp_prediction(next_visual_obs, next_velocities)
+        with torch.no_grad():
+            next_smp_predictions = self._smp_prediction(next_visual_obs, next_velocities)
         next_obs = torch.concat([next_smp_predictions, last_success_smp_output], dim=1)
         self._sac_training_step(obs, next_obs, actions, reward, done, batch_idx)
 
@@ -270,32 +272,34 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             self._prepare_velocities(torch.unsqueeze(torch.unsqueeze(last_velocities, dim=0), dim=0))
         )
 
-        self.x_1, self.h_1 = self._lstm_angular_velocity(
-            velocities[:2], (self.x_1, self.h_1)
-        )  # x: Batch X 1 X encoding dimension
-        self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed(velocities, (self.x_2, self.h_2))
-        self.x_3, self.h_3 = self._lstm_no_self_motion(torch.ones(size=(1,), device=self.device), (self.x_3, self.h_3))
+        with torch.no_grad():
+            self.x_1, self.h_1 = self._lstm_angular_velocity(
+                velocities[:2], (self.x_1, self.h_1)
+            )  # x: Batch X 1 X encoding dimension
+            self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed(velocities, (self.x_2, self.h_2))
+            self.x_3, self.h_3 = self._lstm_no_self_motion(torch.ones(size=(1,), device=self.device), (self.x_3, self.h_3))
 
-        # Correction step
-        # C1: Decide if the correction is happening
-        if np.random.random() < self.hparams.probability_correction:
-            # C2: calculate weights
-            unscaled_visual_activations = self._gamma * y_raw_activation.squeeze()
-            weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
+            # Correction step
+            # C1: Decide if the correction is happening
+            if np.random.random() < self.hparams.probability_correction:
+                # C2: calculate weights
+                unscaled_visual_activations = self._gamma * y_raw_activation.squeeze()
+                weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
-            # C3: Calculate weighted memories
-            angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories.T, dim=-2)
-            angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories.T, dim=-2)
-            no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories.T, dim=-2)
+                # C3: Calculate weighted memories
+                angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories.T, dim=-2)
+                angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories.T, dim=-2)
+                no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories.T, dim=-2)
 
-            # C4: Apply corrections
-            self.x_1, self.h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (self.x_1, self.h_1))
-            self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed_correction(
-                angular_velocity_and_speed_x_tilde, (self.x_2, self.h_2)
-            )
-            self.x_3, self.h_3 = self._lstm_no_self_motion_correction(no_self_motion_x_tilde, (self.x_3, self.h_3))
+                # C4: Apply corrections
+                self.x_1, self.h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (self.x_1, self.h_1))
+                self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed_correction(
+                    angular_velocity_and_speed_x_tilde, (self.x_2, self.h_2)
+                )
+                self.x_3, self.h_3 = self._lstm_no_self_motion_correction(no_self_motion_x_tilde, (self.x_3, self.h_3))
 
         output = torch.concat([self.x_1, self.x_2, self.x_3])
+        output = output.detach()
         policy_input = torch.concat([output, self._last_success_smp_output])
 
         action = torch.squeeze(self.actor.get_action(torch.unsqueeze(policy_input, dim=0)))
@@ -682,6 +686,7 @@ def run_rl_experiment(config: DictConfig) -> None:
         callbacks=[checkpoint_callback],
         log_every_n_steps=1,
         profiler="simple",
+        # detect_anomaly=True
     )
 
     trainer.fit(model)

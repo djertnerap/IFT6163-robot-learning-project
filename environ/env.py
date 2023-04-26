@@ -291,7 +291,7 @@ class OpenField(RatWorldEnv):
             truncation = False
 
         elif self.target:
-            reward = np.exp(-np.linalg.norm(self.goal.pos - self.agent.pos))
+            reward = np.exp(-np.linalg.norm(self.goal.pos - self.agent.pos)/10)
             termination = False
             truncation = False
 

@@ -677,11 +677,11 @@ def run_rl_experiment(config: DictConfig) -> None:
     )
     
     checkpoint_callback = ModelCheckpoint(
-        monitor="Episode_reward",
-        filename="rlsmp-{epoch:02d}-{Episode_reward:.3f}",
-        save_top_k=5,
+        monitor="SMP_loss",
+        filename="rlsmp-{epoch:02d}-{SMP_loss:.4f}",
+        save_top_k=3,
         save_last=True,
-        mode="max",
+        mode="min",
     )
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())

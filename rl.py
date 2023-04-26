@@ -166,6 +166,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         )
         self.q_net_loss = nn.SmoothL1Loss()
         self.rewards=[]
+        self.cumulated_rewards = 0
 
         self._last_success_smp_output = torch.zeros(size=(hidden_size_RNN1+hidden_size_RNN2+hidden_size_RNN3,), device="cuda")
 
@@ -307,14 +308,20 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         self.last_obs, reward, done, truncation, info = self.env.step(self.last_velocities)
         self.last_obs = self.last_obs / 255
 
-        if reward:
+        if reward > 1:
             self._last_success_smp_output = output
 
+        self.cumulated_rewards+=reward
         self.replay_buffer.store_effect(idx=replay_buffer_idx, action=self.last_velocities, reward=reward, done=done)
         self.log("Last_reward", float(reward))
         self.rewards.append(float(reward))
         self.log('Average_reward', np.mean(self.rewards[-300:]))
-        self.log('Sum_reward', np.sum(self.rewards))
+
+        if done:
+            self.log('Episode_reward', self.cumulated_rewards)
+            self.cumulated_rewards = 0
+            self.last_obs, _ = self.env.reset()
+            self.last_obs = self.last_obs / 255
 
     def _perform_smp_training_step(self, batch, batch_idx: int):
         visual_input, velocities, _, _, _, _, _ = batch

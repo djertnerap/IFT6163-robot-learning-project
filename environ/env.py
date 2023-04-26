@@ -31,7 +31,7 @@ class Rat(Agent):
 class RatWorldEnv(MiniWorldEnv, ABC):
     def __init__(
         self,
-        max_episode_steps: int = 3000,
+        max_episode_steps: int = 1000,
         obs_width: int = 80,
         obs_height: int = 60,
         window_width: int = 800,
@@ -278,8 +278,8 @@ class OpenField(RatWorldEnv):
 
         # If the maximum time step count is reached
         if self.step_count >= self.max_episode_steps:
-            termination = False
-            truncation = True
+            termination = True
+            truncation = False
             reward = 0
             # return obs, reward, termination, truncation, {}
         # If the goal is reached

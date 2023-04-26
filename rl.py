@@ -678,7 +678,7 @@ def run_rl_experiment(config: DictConfig) -> None:
     
     checkpoint_callback = ModelCheckpoint(
         monitor="SMP_loss",
-        filename="rlsmp-{epoch:02d}-{SMP_loss:.3f}",
+        filename="rlsmp-{epoch:02d}-{SMP_loss:.4f}",
         save_top_k=3,
         save_last=True,
         mode="min",
@@ -686,7 +686,6 @@ def run_rl_experiment(config: DictConfig) -> None:
 
     tb_logger = pl_loggers.TensorBoardLogger(save_dir=os.getcwd())
     trainer = pl.Trainer(
-        # max_epochs=5,
         max_steps=config["rlsmp"]["max_steps"],
         default_root_dir=original_cwd,
         logger=tb_logger,

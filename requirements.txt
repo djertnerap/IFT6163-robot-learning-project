@@ -11,5 +11,5 @@ lightning[extra]
 pre-commit
 black==23.3.0
 tensorboard
-imagio
-imagio[ffmpeg]
+imageio
+imageio[ffmpeg]

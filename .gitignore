@@ -138,7 +138,6 @@ ratinabox.ipynb
 outputs/
 results/
 lightning_logs/
-data/
 data2/
 test.ipynb
 .vscode/tasks.json

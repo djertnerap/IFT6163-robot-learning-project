@@ -4,7 +4,7 @@ hardware:
     accelerator: 'gpu' # ['cpu', 'gpu', 'tpu']
     which_gpu: 0
     matmul_precision: "high"
-    smp_dataset_folder_path: '/network/scratch/a/aleksei.efremov/data'
+    smp_dataset_folder_path: '/data'
     num_data_loader_workers: 6  # Set to you numbers of CPU cores for smp
 
 env:

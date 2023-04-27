@@ -1,3 +1,13 @@
+#########################################################################################
+# The code in this file has been taken & modified from the homeworks of the course IFT6163 at UdeM.
+# Original authors: Glen Berseth, Lucas Maes, Aton Kamanda
+# Date: 2023-04-06
+# Title: ift6163_homeworks_2023
+# Code version: 5a7e39e78a9260e078555305e669ebcb93ef6e6c
+# Type: Source code
+# URL: https://github.com/milarobotlearningcourse/ift6163_homeworks_2023
+#########################################################################################
+
 import abc
 import itertools
 from typing import Iterator
@@ -56,7 +66,10 @@ class MLPPolicy(nn.Module, metaclass=abc.ABCMeta):
             if self._use_tanh:
                 action_distribution = distributions.transformed_distribution.TransformedDistribution(
                     action_distribution,
-                    [distributions.TanhTransform(), distributions.AffineTransform(0, torch.Tensor([0.3, 1]).to('cuda'))],
+                    [
+                        distributions.TanhTransform(),
+                        distributions.AffineTransform(0, torch.Tensor([0.3, 1]).to("cuda")),
+                    ],
                 )
             return action_distribution
 

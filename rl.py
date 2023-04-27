@@ -5,16 +5,16 @@ import gymnasium as gym
 import hydra
 import numpy as np
 import torch
-from torch.nn.functional import normalize
 from lightning import pytorch as pl
 from lightning.pytorch import loggers as pl_loggers
-from lightning.pytorch.utilities.types import STEP_OUTPUT, TRAIN_DATALOADERS
 from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.utilities.types import STEP_OUTPUT, TRAIN_DATALOADERS
 from omegaconf import DictConfig
 from torch import nn
+from torch.nn.functional import normalize
 from torch.utils.data import DataLoader, IterableDataset
-from tqdm import tqdm
 from torchvision.utils import save_image
+from tqdm import tqdm
 
 from environ import OpenField
 from roble.infrastructure.memory_optimized_replay_buffer import MemoryOptimizedReplayBuffer
@@ -128,7 +128,16 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         # observation_dim = 1 + 2 + 2 * nb_memory_slots
 
         # For now, don't include the previous t-step reward and action
-        observation_dim = 2 * (hidden_size_RNN1+hidden_size_RNN2+hidden_size_RNN3)
+        observation_dim = 2 * (hidden_size_RNN1 + hidden_size_RNN2 + hidden_size_RNN3)
+
+        #########################################################################################
+        # The definitions inside this block have been taken & modified from the homeworks of the course IFT6163 at UdeM.
+        # Original authors: Glen Berseth, Lucas Maes, Aton Kamanda
+        # Date: 2023-04-06
+        # Title: ift6163_homeworks_2023
+        # Code version: 5a7e39e78a9260e078555305e669ebcb93ef6e6c
+        # Type: Source code
+        # URL: https://github.com/milarobotlearningcourse/ift6163_homeworks_2023
         self.actor = MLPPolicyStochastic(
             entropy_coeff=sac_entropy_coeff,
             ac_dim=action_dim,
@@ -165,10 +174,14 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             deterministic=True,
         )
         self.q_net_loss = nn.SmoothL1Loss()
-        self.rewards=[]
+        #########################################################################################
+
+        self.rewards = []
         self.cumulated_rewards = 0
 
-        self._last_success_smp_output = torch.zeros(size=(hidden_size_RNN1+hidden_size_RNN2+hidden_size_RNN3,), device="cuda")
+        self._last_success_smp_output = torch.zeros(
+            size=(hidden_size_RNN1 + hidden_size_RNN2 + hidden_size_RNN3,), device="cuda"
+        )
 
         # SMP models
         self._lstm_angular_velocity = nn.LSTMCell(input_size=2, hidden_size=hidden_size_RNN1)
@@ -278,7 +291,9 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                 velocities[:2], (self.x_1, self.h_1)
             )  # x: Batch X 1 X encoding dimension
             self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed(velocities, (self.x_2, self.h_2))
-            self.x_3, self.h_3 = self._lstm_no_self_motion(torch.ones(size=(1,), device=self.device), (self.x_3, self.h_3))
+            self.x_3, self.h_3 = self._lstm_no_self_motion(
+                torch.ones(size=(1,), device=self.device), (self.x_3, self.h_3)
+            )
 
             # Correction step
             # C1: Decide if the correction is happening
@@ -289,11 +304,15 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
                 # C3: Calculate weighted memories
                 angular_velocity_x_tilde = torch.sum(weights * self._angular_velocity_memories.T, dim=-2)
-                angular_velocity_and_speed_x_tilde = torch.sum(weights * self._angular_velocity_and_speed_memories.T, dim=-2)
+                angular_velocity_and_speed_x_tilde = torch.sum(
+                    weights * self._angular_velocity_and_speed_memories.T, dim=-2
+                )
                 no_self_motion_x_tilde = torch.sum(weights * self._no_self_motion_memories.T, dim=-2)
 
                 # C4: Apply corrections
-                self.x_1, self.h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (self.x_1, self.h_1))
+                self.x_1, self.h_1 = self._lstm_angular_velocity_correction(
+                    angular_velocity_x_tilde, (self.x_1, self.h_1)
+                )
                 self.x_2, self.h_2 = self._lstm_angular_velocity_and_speed_correction(
                     angular_velocity_and_speed_x_tilde, (self.x_2, self.h_2)
                 )
@@ -311,14 +330,14 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         if reward > 1:
             self._last_success_smp_output = output
 
-        self.cumulated_rewards+=reward
+        self.cumulated_rewards += reward
         self.replay_buffer.store_effect(idx=replay_buffer_idx, action=self.last_velocities, reward=reward, done=done)
         self.log("Last_reward", float(reward))
         self.rewards.append(float(reward))
-        self.log('Average_reward', np.mean(self.rewards[-300:]))
+        self.log("Average_reward", np.mean(self.rewards[-300:]))
 
         if done:
-            self.log('Episode_reward', self.cumulated_rewards)
+            self.log("Episode_reward", self.cumulated_rewards)
             self.cumulated_rewards = 0
             self.last_obs, _ = self.env.reset()
             self.last_obs = self.last_obs / 255
@@ -340,10 +359,12 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         p_react, p_pred = self._calculate_p(velocities, y_enc, smp=True)
 
         # E: Calculate the loss
-        loss = -torch.sum(torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1)+1e-43), dim=-1).mean()
+        loss = -torch.sum(
+            torch.flatten(p_react, end_dim=1) * torch.log(torch.flatten(p_pred, end_dim=1) + 1e-43), dim=-1
+        ).mean()
         self.log("SMP_loss", loss)
-        self.log('stored_memory_slots', float(len(self.slots_to_store)))
-        self.log('beta', self._beta)
+        self.log("stored_memory_slots", float(len(self.slots_to_store)))
+        self.log("beta", self._beta)
 
         smp_optimizer = self.optimizers()[0]
         smp_optimizer.zero_grad()
@@ -352,9 +373,9 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
         # P_storage
         with torch.no_grad():
-            self._angular_velocity_memories.data = self._angular_velocity_memories*self.mask_1[-1]
-            self._angular_velocity_and_speed_memories.data = self._angular_velocity_and_speed_memories*self.mask_2[-1]
-            self._no_self_motion_memories.data = self._no_self_motion_memories*self.mask_3[-1]
+            self._angular_velocity_memories.data = self._angular_velocity_memories * self.mask_1[-1]
+            self._angular_velocity_and_speed_memories.data = self._angular_velocity_and_speed_memories * self.mask_2[-1]
+            self._no_self_motion_memories.data = self._no_self_motion_memories * self.mask_3[-1]
 
     def _smp_prediction(self, visual_input: torch.Tensor, velocities: torch.Tensor) -> torch.Tensor:
         visual_input = torch.permute(visual_input, dims=(0, 1, 4, 2, 3))
@@ -389,8 +410,14 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
 
         # Initialize P distributions
         # Batch X Sequence length X nb of slots
-        p_react = torch.zeros(size=[self.hparams.batch_size, self.hparams.bptt_unroll_len, self.hparams.nb_memory_slots], device=self.device)
-        p_pred = torch.zeros(size=[self.hparams.batch_size, self.hparams.bptt_unroll_len, self.hparams.nb_memory_slots], device=self.device)
+        p_react = torch.zeros(
+            size=[self.hparams.batch_size, self.hparams.bptt_unroll_len, self.hparams.nb_memory_slots],
+            device=self.device,
+        )
+        p_pred = torch.zeros(
+            size=[self.hparams.batch_size, self.hparams.bptt_unroll_len, self.hparams.nb_memory_slots],
+            device=self.device,
+        )
 
         x_1, h_1 = torch.zeros(
             (self.hparams.batch_size, self.hparams.hidden_size_RNN1), device=self.device
@@ -405,11 +432,19 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         xs_1 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN1], device=self.device)
         xs_2 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN2], device=self.device)
         xs_3 = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.hidden_size_RNN3], device=self.device)
-        y_raw_activation = torch.zeros(size=list(velocities.shape[:2]) + [self.hparams.memory_slot_size], device=self.device)
+        y_raw_activation = torch.zeros(
+            size=list(velocities.shape[:2]) + [self.hparams.memory_slot_size], device=self.device
+        )
 
-        self.mask_1 = [torch.ones(size=[self.hparams.hidden_size_RNN1, self.hparams.nb_memory_slots], device=self.device)]
-        self.mask_2 = [torch.ones(size=[self.hparams.hidden_size_RNN2, self.hparams.nb_memory_slots], device=self.device)]
-        self.mask_3 = [torch.ones(size=[self.hparams.hidden_size_RNN3, self.hparams.nb_memory_slots], device=self.device)]
+        self.mask_1 = [
+            torch.ones(size=[self.hparams.hidden_size_RNN1, self.hparams.nb_memory_slots], device=self.device)
+        ]
+        self.mask_2 = [
+            torch.ones(size=[self.hparams.hidden_size_RNN2, self.hparams.nb_memory_slots], device=self.device)
+        ]
+        self.mask_3 = [
+            torch.ones(size=[self.hparams.hidden_size_RNN3, self.hparams.nb_memory_slots], device=self.device)
+        ]
 
         seq_len = velocities.shape[1]
         correction_samples = np.random.random(size=(seq_len,))
@@ -421,41 +456,61 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             # P_storage
             if (storage_samples[t] < self.hparams.probability_storage) and smp:
 
-                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                                y_enc[:, start_t[-1]:t, :],
-                                                                                                self._visual_memories),
-                                                                     dim=-1)
-                                                                     
+                p_react[:, start_t[-1] : t, :] = nn.functional.softmax(
+                    self._calculate_activation(self._beta, y_enc[:, start_t[-1] : t, :], self._visual_memories), dim=-1
+                )
+
                 start_t.append(t)
 
-                self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
-                                                          self._visual_memories.min()]))).detach()
-                self.av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
-                                                            self._angular_velocity_memories.min()]))).detach()
-                self.avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
-                                                            self._angular_velocity_and_speed_memories.min()]))).detach()
-                self.nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
-                                                            self._no_self_motion_memories.min()]))).detach()
+                self.vis_range = torch.max(
+                    torch.abs(torch.Tensor([self._visual_memories.max(), self._visual_memories.min()]))
+                ).detach()
+                self.av_range = torch.max(
+                    torch.abs(
+                        torch.Tensor([self._angular_velocity_memories.max(), self._angular_velocity_memories.min()])
+                    )
+                ).detach()
+                self.avs_range = torch.max(
+                    torch.abs(
+                        torch.Tensor(
+                            [
+                                self._angular_velocity_and_speed_memories.max(),
+                                self._angular_velocity_and_speed_memories.min(),
+                            ]
+                        )
+                    )
+                ).detach()
+                self.nsm_range = torch.max(
+                    torch.abs(torch.Tensor([self._no_self_motion_memories.max(), self._no_self_motion_memories.min()]))
+                ).detach()
 
                 self.slots_to_store.append(torch.randperm(self.hparams.nb_memory_slots)[0])
 
                 batch_idx = torch.randperm(self.hparams.batch_size)[0]
 
-                self._visual_memories[:, self.slots_to_store[-1]] = normalize(y_enc[batch_idx, t][None]) * self.vis_range
+                self._visual_memories[:, self.slots_to_store[-1]] = (
+                    normalize(y_enc[batch_idx, t][None]) * self.vis_range
+                )
                 self.mask_1.append(self.mask_1[-1].clone())
                 self.mask_2.append(self.mask_2[-1].clone())
                 self.mask_3.append(self.mask_3[-1].clone())
-                self.mask_1[-1][:, self.slots_to_store[-1]] = (normalize(x_1[batch_idx].detach()[None])
-                                                            * self.av_range
-                                                            / self._angular_velocity_memories[:, self.slots_to_store[-1]])
-                self.mask_2[-1][:, self.slots_to_store[-1]] = (normalize(x_2[batch_idx].detach()[None])
-                                                            * self.avs_range
-                                                            / self._angular_velocity_and_speed_memories[:, self.slots_to_store[-1]])
-                self.mask_3[-1][:, self.slots_to_store[-1]] = (normalize(x_3[batch_idx].detach()[None])
-                                                            * self.nsm_range
-                                                            / self._no_self_motion_memories[:, self.slots_to_store[-1]])
+                self.mask_1[-1][:, self.slots_to_store[-1]] = (
+                    normalize(x_1[batch_idx].detach()[None])
+                    * self.av_range
+                    / self._angular_velocity_memories[:, self.slots_to_store[-1]]
+                )
+                self.mask_2[-1][:, self.slots_to_store[-1]] = (
+                    normalize(x_2[batch_idx].detach()[None])
+                    * self.avs_range
+                    / self._angular_velocity_and_speed_memories[:, self.slots_to_store[-1]]
+                )
+                self.mask_3[-1][:, self.slots_to_store[-1]] = (
+                    normalize(x_3[batch_idx].detach()[None])
+                    * self.nsm_range
+                    / self._no_self_motion_memories[:, self.slots_to_store[-1]]
+                )
 
-            y_raw_activation = y_enc[:,t,:] @ self._visual_memories
+            y_raw_activation = y_enc[:, t, :] @ self._visual_memories
 
             x_1, h_1 = self._lstm_angular_velocity(
                 velocities[:, t, :2].squeeze(), (x_1, h_1)
@@ -464,7 +519,7 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             x_3, h_3 = self._lstm_no_self_motion(
                 torch.ones(size=(self.hparams.batch_size, 1), device=self.device), (x_3, h_3)
             )
-            
+
             out_1 = nn.functional.dropout(x_1, p=0.5)
             out_2 = nn.functional.dropout(x_2, p=0.5)
             out_3 = nn.functional.dropout(x_3, p=0.5)
@@ -477,11 +532,15 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
                 weights = torch.unsqueeze(nn.functional.softmax(unscaled_visual_activations, dim=-1), dim=-1)
 
                 # C3: Calculate weighted memories
-                angular_velocity_x_tilde = torch.sum(weights * (self._angular_velocity_memories*self.mask_1[-1]).T, dim=-2)
-                angular_velocity_and_speed_x_tilde = torch.sum(
-                    weights * (self._angular_velocity_and_speed_memories*self.mask_2[-1]).T, dim=-2
+                angular_velocity_x_tilde = torch.sum(
+                    weights * (self._angular_velocity_memories * self.mask_1[-1]).T, dim=-2
                 )
-                no_self_motion_x_tilde = torch.sum(weights * (self._no_self_motion_memories*self.mask_3[-1]).T, dim=-2)
+                angular_velocity_and_speed_x_tilde = torch.sum(
+                    weights * (self._angular_velocity_and_speed_memories * self.mask_2[-1]).T, dim=-2
+                )
+                no_self_motion_x_tilde = torch.sum(
+                    weights * (self._no_self_motion_memories * self.mask_3[-1]).T, dim=-2
+                )
 
                 # C4: Apply corrections
                 x_1, h_1 = self._lstm_angular_velocity_correction(angular_velocity_x_tilde, (x_1, h_1))
@@ -501,29 +560,34 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         # D: Calculate the predictions of the RNNs
         # D1: Calculate the rest of p_react
         if smp:
-            p_react[:, start_t[-1]:, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                        y_enc[:, start_t[-1]:, :],
-                                                                                        self._visual_memories),
-                                                                dim=-1)
+            p_react[:, start_t[-1] :, :] = nn.functional.softmax(
+                self._calculate_activation(self._beta, y_enc[:, start_t[-1] :, :], self._visual_memories), dim=-1
+            )
             p_react_entropy = -torch.sum(p_react * torch.log(p_react + 1e-43), dim=-1).mean()
             self.update_beta(p_react_entropy)
             # D2: Calculate the predictions
             start_t.append(50)
-            for i in range(len(start_t)-1):
-                p_pred[:, start_t[i]:start_t[i+1], :] = nn.functional.softmax(
-                    self._calculate_activation(self._pi_angular_velocity,
-                                            xs_1[:, start_t[i]:start_t[i+1], :],
-                                            self._angular_velocity_memories*self.mask_1[i])
-                    + self._calculate_activation(self._pi_angular_velocity_and_speed,
-                                                xs_2[:, start_t[i]:start_t[i+1], :],
-                                                self._angular_velocity_and_speed_memories*self.mask_2[i])
-                    + self._calculate_activation(self._pi_no_self_motion,
-                                                xs_3[:, start_t[i]:start_t[i+1], :],
-                                                self._no_self_motion_memories*self.mask_3[i]),
-                    dim=-1
+            for i in range(len(start_t) - 1):
+                p_pred[:, start_t[i] : start_t[i + 1], :] = nn.functional.softmax(
+                    self._calculate_activation(
+                        self._pi_angular_velocity,
+                        xs_1[:, start_t[i] : start_t[i + 1], :],
+                        self._angular_velocity_memories * self.mask_1[i],
+                    )
+                    + self._calculate_activation(
+                        self._pi_angular_velocity_and_speed,
+                        xs_2[:, start_t[i] : start_t[i + 1], :],
+                        self._angular_velocity_and_speed_memories * self.mask_2[i],
+                    )
+                    + self._calculate_activation(
+                        self._pi_no_self_motion,
+                        xs_3[:, start_t[i] : start_t[i + 1], :],
+                        self._no_self_motion_memories * self.mask_3[i],
+                    ),
+                    dim=-1,
                 )  # Batch X Sequence length X nb of slots
             return p_react, p_pred
-        
+
         return xs_1[:, -1, :], xs_2[:, -1, :], xs_3[:, -1, :]
 
     def _sac_training_step(self, observation, next_observation, actions, rewards, terminal, batch_idx):
@@ -540,6 +604,17 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
             self._update_target_network()
 
     def _train_critic(self, observation, next_observation, actions, rewards, terminal):
+        """
+        #########################################################################################
+        # The code in this function has been taken & modified from the homeworks of the course IFT6163 at UdeM.
+        # Original authors: Glen Berseth, Lucas Maes, Aton Kamanda
+        # Date: 2023-04-06
+        # Title: ift6163_homeworks_2023
+        # Code version: 5a7e39e78a9260e078555305e669ebcb93ef6e6c
+        # Type: Source code
+        # URL: https://github.com/milarobotlearningcourse/ift6163_homeworks_2023
+        #########################################################################################
+        """
         _, _, q_net_optimizer, q_net2_optimizer = self.optimizers()
 
         qa_t_values = self.q_net(observation, actions)
@@ -580,6 +655,17 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         q_net2_optimizer.step()
 
     def _train_actor(self, observation):
+        """
+        #########################################################################################
+        # The code in this function has been taken & modified from the homeworks of the course IFT6163 at UdeM.
+        # Original authors: Glen Berseth, Lucas Maes, Aton Kamanda
+        # Date: 2023-04-06
+        # Title: ift6163_homeworks_2023
+        # Code version: 5a7e39e78a9260e078555305e669ebcb93ef6e6c
+        # Type: Source code
+        # URL: https://github.com/milarobotlearningcourse/ift6163_homeworks_2023
+        #########################################################################################
+        """
         _, actor_optimizer, _, _ = self.optimizers()
 
         action_distribution = self.actor.forward(observation)
@@ -602,6 +688,17 @@ class SACWithSpatialMemoryPipeline(pl.LightningModule):
         self._apply_polyak_avg(self.q_net_target2, self.q_net2)
 
     def _apply_polyak_avg(self, target_net_params: nn.Module, net_params: nn.Module):
+        """
+        #########################################################################################
+        # The code in this function has been taken & modified from the homeworks of the course IFT6163 at UdeM.
+        # Original authors: Glen Berseth, Lucas Maes, Aton Kamanda
+        # Date: 2023-04-06
+        # Title: ift6163_homeworks_2023
+        # Code version: 5a7e39e78a9260e078555305e669ebcb93ef6e6c
+        # Type: Source code
+        # URL: https://github.com/milarobotlearningcourse/ift6163_homeworks_2023
+        #########################################################################################
+        """
         for target_param, param in zip(target_net_params.parameters(), net_params.parameters()):
             ## Perform Polyak averaging
             target_param.data.copy_(self.hparams.polyak_avg * target_param + (1 - self.hparams.polyak_avg) * param)
@@ -675,7 +772,7 @@ def run_rl_experiment(config: DictConfig) -> None:
         replay_buffer_size=config["rlsmp"]["replay_buffer_size"],
         max_steps=config["rlsmp"]["max_steps"],
     )
-    
+
     checkpoint_callback = ModelCheckpoint(
         monitor="SMP_loss",
         filename="rlsmp-{epoch:02d}-{SMP_loss:.4f}",

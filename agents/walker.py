@@ -30,7 +30,7 @@ def run_random_walk(time: int, seed: int, dataset_folder_path: str, traj_nb, img
     pos = env.agent.pos
     direction = env.agent.dir
 
-    ag, traj = generate_traj((np.array([pos[0], pos[2]]) - 0.5) / 10, -direction, traj_nb, timescale)
+    ag, traj = generate_traj((np.array([pos[0], pos[2]]) - 0.5) / 10, -direction, traj_nb, time, timescale)
 
     for t in tqdm(range(traj.shape[1]), desc=f"Render Images for trajectory #{traj_nb}"):
         # insert tqdm for image saving here

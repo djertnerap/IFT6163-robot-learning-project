@@ -141,12 +141,30 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         storage = np.random.random() < self._probability_storage
         if storage:
-            store_seq = np.randperm(self.batch_size)
-            store_step = np.randperm(self._sequence_length)
+            store_seq = np.random.choice(self.batch_size)
+            store_step = np.random.choice(self._sequence_length)
         else:
             store_step = self._sequence_length
 
         for t in range(seq_len):
+            
+            # P_storage
+            if t == store_step:
+                
+                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
+                                                                                                y_enc[:, start_t[-1]:t, :],
+                                                                                                self._visual_memories),
+                                                                    dim=-1)
+                start_t.append(t)
+
+                self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
+                                                            self._visual_memories.min()]))).detach()
+
+                self.slots_to_store.append(np.random.choice(self._nb_memory_slots))
+
+                self._visual_memories[:, self.slots_to_store[-1]] = normalize(y_enc[store_seq, t][None]) * self.vis_range
+
+            y_raw_activation = y_enc[:,t,:] @ self._visual_memories
 
             x_1, h_1 = self._lstm_angular_velocity(
                 velocities[:, t, :2].squeeze(), (x_1, h_1)
@@ -190,25 +208,12 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
             # P_storage
             if t == store_step:
-                
-                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                                y_enc[:, start_t[-1]:t, :],
-                                                                                                self._visual_memories),
-                                                                    dim=-1)
-                start_t.append(t)
-
-                self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
-                                                            self._visual_memories.min()]))).detach()
                 self.av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
                                                             self._angular_velocity_memories.min()]))).detach()
                 self.avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
                                                             self._angular_velocity_and_speed_memories.min()]))).detach()
                 self.nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
                                                             self._no_self_motion_memories.min()]))).detach()
-
-                self.slots_to_store.append(torch.randperm(self._nb_memory_slots)[0])
-
-                self._visual_memories[:, self.slots_to_store[-1]] = normalize(y_enc[store_seq, t][None]) * self.vis_range
                 self.mask_1.append(self.mask_1[-1].clone())
                 self.mask_2.append(self.mask_2[-1].clone())
                 self.mask_3.append(self.mask_3[-1].clone())
@@ -221,8 +226,6 @@ class SpatialMemoryPipeline(pl.LightningModule):
                 self.mask_3[-1][:, self.slots_to_store[-1]] = (normalize(x_3[store_seq].detach()[None])
                                                             * self.nsm_range
                                                             / self._no_self_motion_memories[:, self.slots_to_store[-1]])
-
-            y_raw_activation = y_enc[:,t,:] @ self._visual_memories
 
         # D: Calculate the predictions of the RNNs
         # D1: Calculate the rest of p_react
@@ -311,7 +314,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
 def run_smp_experiment(config: DictConfig):
     original_cwd = hydra.utils.get_original_cwd()
-    data_dir = os.path.abspath(original_cwd + config["hardware"]["smp_dataset_folder_path"])
+    data_dir = os.path.abspath(config["hardware"]["smp_dataset_folder_path"])
     rat_sequence_data_module = SequencedDataModule(
         data_dir=data_dir,
         config=config,

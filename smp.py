@@ -43,7 +43,7 @@ class SpatialMemoryPipeline(pl.LightningModule):
         self._memory_slot_learning_rate = memory_slot_learning_rate
         self._nb_memory_slots = nb_memory_slots
         self._probability_correction = probability_correction
-        self._probability_storage = probability_storage
+        self._probability_storage = probability_storage * batch_size * sequence_length
         self._update_beta_every = update_beta_every
         self._memory_slot_size = memory_slot_size
         self._hidden_size_RNN1 = hidden_size_RNN1
@@ -137,49 +137,16 @@ class SpatialMemoryPipeline(pl.LightningModule):
 
         seq_len = velocities.shape[1]
         correction_samples = np.random.random(size=(seq_len,))
-        storage_samples = np.random.random(size=(seq_len,))
-        storage_samples[0] = 1
         start_t = [0]
 
+        storage = np.random.random() < self._probability_storage
+        if storage:
+            store_seq = np.randperm(self.batch_size)
+            store_step = np.randperm(self._sequence_length)
+        else:
+            store_step = self._sequence_length
+
         for t in range(seq_len):
-
-            # P_storage
-            if storage_samples[t] < self._probability_storage:
-                
-                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
-                                                                                                y_enc[:, start_t[-1]:t, :],
-                                                                                                self._visual_memories),
-                                                                    dim=-1)
-                start_t.append(t)
-
-                self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
-                                                          self._visual_memories.min()]))).detach()
-                self.av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
-                                                            self._angular_velocity_memories.min()]))).detach()
-                self.avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
-                                                            self._angular_velocity_and_speed_memories.min()]))).detach()
-                self.nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
-                                                            self._no_self_motion_memories.min()]))).detach()
-
-                self.slots_to_store.append(torch.randperm(self._nb_memory_slots)[0])
-
-                batch_idx = torch.randperm(self.batch_size)[0]
-
-                self._visual_memories[:, self.slots_to_store[-1]] = normalize(y_enc[batch_idx, t][None]) * self.vis_range
-                self.mask_1.append(self.mask_1[-1].clone())
-                self.mask_2.append(self.mask_2[-1].clone())
-                self.mask_3.append(self.mask_3[-1].clone())
-                self.mask_1[-1][:, self.slots_to_store[-1]] = (normalize(x_1[batch_idx].detach()[None])
-                                                            * self.av_range
-                                                            / self._angular_velocity_memories[:, self.slots_to_store[-1]])
-                self.mask_2[-1][:, self.slots_to_store[-1]] = (normalize(x_2[batch_idx].detach()[None])
-                                                            * self.avs_range
-                                                            / self._angular_velocity_and_speed_memories[:, self.slots_to_store[-1]])
-                self.mask_3[-1][:, self.slots_to_store[-1]] = (normalize(x_3[batch_idx].detach()[None])
-                                                            * self.nsm_range
-                                                            / self._no_self_motion_memories[:, self.slots_to_store[-1]])
-
-            y_raw_activation = y_enc[:,t,:] @ self._visual_memories
 
             x_1, h_1 = self._lstm_angular_velocity(
                 velocities[:, t, :2].squeeze(), (x_1, h_1)
@@ -220,6 +187,42 @@ class SpatialMemoryPipeline(pl.LightningModule):
             xs_1[:, t, :] = out_1
             xs_2[:, t, :] = out_2
             xs_3[:, t, :] = out_3
+
+            # P_storage
+            if t == store_step:
+                
+                p_react[:, start_t[-1]:t, :] = nn.functional.softmax(self._calculate_activation(self._beta,
+                                                                                                y_enc[:, start_t[-1]:t, :],
+                                                                                                self._visual_memories),
+                                                                    dim=-1)
+                start_t.append(t)
+
+                self.vis_range = torch.max(torch.abs(torch.Tensor([self._visual_memories.max(),
+                                                            self._visual_memories.min()]))).detach()
+                self.av_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_memories.max(),
+                                                            self._angular_velocity_memories.min()]))).detach()
+                self.avs_range = torch.max(torch.abs(torch.Tensor([self._angular_velocity_and_speed_memories.max(),
+                                                            self._angular_velocity_and_speed_memories.min()]))).detach()
+                self.nsm_range = torch.max(torch.abs(torch.Tensor([self._no_self_motion_memories.max(),
+                                                            self._no_self_motion_memories.min()]))).detach()
+
+                self.slots_to_store.append(torch.randperm(self._nb_memory_slots)[0])
+
+                self._visual_memories[:, self.slots_to_store[-1]] = normalize(y_enc[store_seq, t][None]) * self.vis_range
+                self.mask_1.append(self.mask_1[-1].clone())
+                self.mask_2.append(self.mask_2[-1].clone())
+                self.mask_3.append(self.mask_3[-1].clone())
+                self.mask_1[-1][:, self.slots_to_store[-1]] = (normalize(x_1[store_seq].detach()[None])
+                                                            * self.av_range
+                                                            / self._angular_velocity_memories[:, self.slots_to_store[-1]])
+                self.mask_2[-1][:, self.slots_to_store[-1]] = (normalize(x_2[store_seq].detach()[None])
+                                                            * self.avs_range
+                                                            / self._angular_velocity_and_speed_memories[:, self.slots_to_store[-1]])
+                self.mask_3[-1][:, self.slots_to_store[-1]] = (normalize(x_3[store_seq].detach()[None])
+                                                            * self.nsm_range
+                                                            / self._no_self_motion_memories[:, self.slots_to_store[-1]])
+
+            y_raw_activation = y_enc[:,t,:] @ self._visual_memories
 
         # D: Calculate the predictions of the RNNs
         # D1: Calculate the rest of p_react

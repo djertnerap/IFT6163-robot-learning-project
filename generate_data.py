@@ -13,7 +13,7 @@ def generate_data(cfg: DictConfig):
 
     faulthandler.enable()
 
-    data_path = os.path.abspath(hydra.utils.get_original_cwd() + cfg.hardware.smp_dataset_folder_path)
+    data_path = os.path.abspath(cfg.hardware.smp_dataset_folder_path)
 
     import environ
     env = gym.make(
@@ -41,4 +41,5 @@ def generate_data(cfg: DictConfig):
             traj_nb=i,
             img_size=cfg.env.img_size,
             env=env,
+            timescale=cfg.env.traj_timescale
         )

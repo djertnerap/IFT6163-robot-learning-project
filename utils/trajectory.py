@@ -37,7 +37,7 @@ class Agent_New(Agent):
         return
 
 
-def generate_traj(pos, direction, traj_nb, T=600):
+def generate_traj(pos, direction, traj_nb, T=600, timescale=50e-3):
     Env = Environment(params={"aspect": 1, "scale": 2.2})
 
     Ag = Agent_New(Env)
@@ -49,7 +49,7 @@ def generate_traj(pos, direction, traj_nb, T=600):
     Ag.history["angle"] = [get_angle(Ag.velocity)]
     Ag.speed_mean = 0.2
 
-    dt = 50e-3
+    dt = timescale
 
     for i in tqdm(range(int(T / dt)), desc=f"Render Updates for trajectory #{traj_nb}"):
         Ag.update(dt=dt)

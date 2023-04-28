@@ -32,7 +32,7 @@ class RatDataModule(pl.LightningDataModule):
 
     def prepare_data(self):
         original_cwd = hydra.utils.get_original_cwd()
-        data_dir = os.path.abspath(original_cwd + self._config.hardware.smp_dataset_folder_path)
+        data_dir = os.path.abspath(self._config.hardware.smp_dataset_folder_path)
         if not Path(data_dir).exists():
             generate_data.generate_data(self._config)
 
